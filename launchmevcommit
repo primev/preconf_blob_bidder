@@ -1,0 +1,170 @@
+#!/bin/bash
+
+# Initialize variables
+RPC_URL="https://chainrpc.testnet.mev-commit.xyz"
+CONTRACTS_URL="https://contracts.testnet.mev-commit.xyz"
+NODE_TYPE=""
+ROOT_DIRECTORY="$HOME/.mev-commit"
+MEV_COMMIT_VERSION="v0.3.0"
+MEV_COMMIT_LOG_LEVEL="info"
+# Define the base URL for downloading the mev-commit release
+BASE_URL="https://github.com/primev/mev-commit/releases/download/${MEV_COMMIT_VERSION}"
+
+# Contract Addresses
+export MEV_COMMIT_BLOCK_TRACKER_ADDR="$(curl --silent ${CONTRACTS_URL} | jq -r '.BlockTracker')"
+export MEV_COMMIT_BIDDER_REGISTRY_ADDR="$(curl --silent ${CONTRACTS_URL} | jq -r '.BidderRegistry')"
+export MEV_COMMIT_PROVIDER_REGISTRY_ADDR="$(curl --silent ${CONTRACTS_URL} | jq -r '.ProviderRegistry')"
+export MEV_COMMIT_PRECONF_ADDR="$(curl --silent ${CONTRACTS_URL} | jq -r '.PreConfCommitmentStore')"
+
+
+# Function to show usage
+usage() {
+    echo "Usage: $0 --rpc-url <RPC_URL> --node-type <NODE_TYPE>"
+    exit 1
+}
+
+
+# Parse command-line arguments
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --rpc-url) RPC_URL="$2"; shift ;;
+        --node-type) NODE_TYPE="$2"; shift ;;
+        *) echo "Unknown parameter passed: $1"; usage ;;
+    esac
+    shift
+done
+
+# Check if RPC_URL and NODE_TYPE are provided
+if [ -z "$NODE_TYPE" ]; then
+    echo "Error: Missing required argument --node-type."
+    usage
+fi
+
+# Determine OS and Architecture
+OS=$(uname -s)
+ARCH=$(uname -m)
+# Remove the first character from MEV_COMMIT_VERSION
+VERSION=${MEV_COMMIT_VERSION:1}
+
+# Select the correct file based on OS and Architecture
+case $OS in
+    "Darwin")
+        case $ARCH in
+            "arm64") FILE="mev-commit_${VERSION}_Darwin_arm64.tar.gz" ;;
+            "x86_64") FILE="mev-commit_${VERSION}_Darwin_x86_64.tar.gz" ;;
+            *) echo "Unsupported architecture"; exit 1 ;;
+        esac
+        ;;
+    "Linux")
+        case $ARCH in
+            "arm64") FILE="mev-commit_${VERSION}_Linux_arm64.tar.gz" ;;
+            "x86_64") FILE="mev-commit_${VERSION}_Linux_x86_64.tar.gz" ;;
+            *) echo "Unsupported architecture"; exit 1 ;;
+        esac
+        ;;
+    "Windows_NT")
+        FILE="mev-commit_${VERSION}_Windows_x86_64.zip"
+        ;;
+    *)
+        echo "Unsupported operating system"
+        exit 1
+        ;;
+esac
+
+
+# Download the file using curl
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m Downloading mev-commit files...\033[0m"
+curl -s -L "${BASE_URL}/${FILE}" -o "${FILE}"
+
+# Check if the download was successful
+if [ ! -f "${FILE}" ]; then
+    echo "Failed to download the file."
+    exit 1
+fi
+
+# Check the file type
+file "${FILE}"
+
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m Installing foundry...\033[0m"
+
+# Create the foundry directory if it doesn't exist
+if [ ! -d ~/.foundry/bin ]; then
+    curl -s -L https://foundry.paradigm.xyz | bash
+    $HOME/.foundry/bin/foundryup
+fi
+
+# Create the target directory if it doesn't exist
+mkdir -p $ROOT_DIRECTORY
+
+# Extract the file to the target directory with verbose output
+tar -xzf "${FILE}" -C $ROOT_DIRECTORY || { echo "Extraction failed"; exit 1; }
+
+# Check if the extraction was successful
+if [ ! -f $ROOT_DIRECTORY/mev-commit ]; then
+    echo "Failed to find the mev-commit executable."
+    exit 1
+fi
+
+# Navigate to the target directory
+cd $ROOT_DIRECTORY
+
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m Initializing mev-commit...\033[0m"
+./mev-commit --settlement-rpc-endpoint "${RPC_URL}" --peer-type $NODE_TYPE --bootnodes /dnsaddr/bootnode.testnet.mev-commit.xyz &
+server_pid=$!
+
+# Function to cleanup on exit
+cleanup() {
+    echo "Killing mev-commit node with PID $server_pid"
+    kill $server_pid
+    exit 0
+}
+
+# Set trap to call cleanup on script exit
+trap cleanup EXIT SIGINT SIGTERM
+
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m To kill mev-commit, exit the script. \033[0m" 
+
+
+sleep 5
+
+KEY=$(cat $ROOT_DIRECTORY/key)
+ADDRESS=$(cast wallet address --private-key 0x$(cat $ROOT_DIRECTORY/key))
+
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m Created private key and saved.\033[0m"
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m Wallet Address: $ADDRESS \033[0m"
+
+echo -e "\033[31m[\033[34m*\033[31m]\033[33m Waiting for Wallet Address: $ADDRESS to be funded \033[0m"
+
+while true; do
+    balance=$($HOME/.foundry/bin/cast balance $ADDRESS --rpc-url $RPC_URL)
+    balance_in_ether=$(echo "scale=18; $balance / 1000000000000000000" | bc)
+    echo -e "\033[31m[\033[34m*\033[31m]\033[33m Balance: $balance_in_ether ETH \033[0m"
+    
+    if (( $(echo "$balance_in_ether > 0" | bc -l) )); then
+        echo -e "\033[31m[\033[34m*\033[31m]\033[33m Account $ADDRESS is now funded. \033[0m"
+        break
+    else
+        echo -e "\033[31m[\033[34m*\033[31m]\033[33m Waiting for account $ADDRESS to be funded... \033[0m"
+        sleep 5
+    fi
+done
+
+sleep 3
+# Check i Node_Type is provider
+if [ "$NODE_TYPE" == "provider" ]; then
+    stake_amount=$($HOME/.foundry/bin/cast call $PROVIDER_REGISTRY_CONTRACT 'checkStake(address)' $ADDRESS --rpc-url $RPC_URL)
+    if [[ $stake_amount =~ ^0x0+$ ]]; then
+
+	echo -e "\033[31m[\033[34m*\033[31m]\033[33m Registering $ADDRESS as a provider with 50 ether stake \033[0m"
+
+	# Use the RPC URL variable in the cast send command
+	if ! $HOME/.foundry/bin/cast send $PROVIDER_REGISTRY_CONTRACT "registerAndStake()" $ADDRESS --rpc-url "$RPC_URL" --private-key $KEY --value 50ether > /dev/null 2>&1; then
+		echo "Failed to send provider registration transaction."
+		exit 1
+	fi
+    else
+	echo -e "\033[31m[\033[34m*\033[31m]\033[33m The address $ADDRESS is already registered as provider \033[0m"
+    fi
+fi
+
+wait $server_pid
