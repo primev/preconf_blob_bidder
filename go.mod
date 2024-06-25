@@ -1,8 +1,9 @@
-module v2
+module github.com/Evan-Kim2028/example_bidder_go
 
 go 1.22.1
 
 require (
+	github.com/ethpandaops/goomy-blob v0.0.0-20240502110334-35f2282cfe3b
 	github.com/primev/mev-commit/p2p v0.0.0-20240621133140-c80ebadb38eb
 	google.golang.org/grpc v1.64.0
 )
