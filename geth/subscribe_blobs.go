@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,8 +21,12 @@ import (
 )
 
 var (
-	// Required fields
 	executionEndpoint = flag.String("execution-endpoint", "ws://localhost:8546", "Path to RPC endpoint for execution client.")
+	dataFolder        = "data"
+	txDataFile        = "tx_data.json"
+	blockDataFile     = "block_data.json"
+	txMetricsFile     = "tx_metrics.json"
+	txInclusionFile   = "tx_inclusion.json"
 )
 
 type TxData struct {
@@ -60,7 +67,6 @@ func main() {
 	flag.Parse()
 	log.Info().Msgf("Using RPC endpoint of %s", *executionEndpoint)
 
-	// Connect to the execution client via webook
 	client, err := rpc.DialWebsocket(context.Background(), *executionEndpoint, "")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to dial websocket")
@@ -89,6 +95,13 @@ func main() {
 	pendingTxs := make(map[common.Hash]*gethtypes.Transaction)
 	txTime := make(map[common.Hash]time.Time)
 
+	var txDataList []TxData
+	var blockDataList []BlockData
+	var txMetricsList []TxMetricsData
+	var txInclusionList []TxInclusionData
+
+	createDataFolder()
+
 	for {
 		select {
 		case err := <-pSub.Err():
@@ -98,6 +111,10 @@ func main() {
 			close(txChan)
 			close(hdrChan)
 			hSub.Unsubscribe()
+			saveDataToFile(filepath.Join(dataFolder, txDataFile), txDataList)
+			saveDataToFile(filepath.Join(dataFolder, blockDataFile), blockDataList)
+			saveDataToFile(filepath.Join(dataFolder, txMetricsFile), txMetricsList)
+			saveDataToFile(filepath.Join(dataFolder, txInclusionFile), txInclusionList)
 			return
 
 		case err := <-hSub.Err():
@@ -107,31 +124,40 @@ func main() {
 			close(txChan)
 			close(hdrChan)
 			pSub.Unsubscribe()
+			saveDataToFile(filepath.Join(dataFolder, txDataFile), txDataList)
+			saveDataToFile(filepath.Join(dataFolder, blockDataFile), blockDataList)
+			saveDataToFile(filepath.Join(dataFolder, txMetricsFile), txMetricsList)
+			saveDataToFile(filepath.Join(dataFolder, txInclusionFile), txInclusionList)
 			return
 
 		case tx := <-txChan:
 			if tx.Type() == gethtypes.BlobTxType {
 				tHash := tx.Hash()
-				log.Info().Fields(txData(tx, chainID)).Msg("Received new Transaction from Gossip")
+				txData := txData(tx, chainID)
+				log.Info().Fields(txData).Msg("Received new Transaction from Gossip")
 				txTime[tHash] = time.Now()
-				recordTxMetrics(tx, chainID, txTime[tHash])
+				txMetricsList = recordTxMetrics(txMetricsList, tx, chainID, txTime[tHash])
 				pendingTxs[tHash] = tx
-
+				txDataList = append(txDataList, txData)
+				saveDataToFile(filepath.Join(dataFolder, txDataFile), txDataList)
+				saveDataToFile(filepath.Join(dataFolder, txMetricsFile), txMetricsList)
 			}
 
 		case h := <-hdrChan:
 			if h.ExcessBlobGas != nil {
 				currBaseFee = eip4844.CalcBlobFee(*h.ExcessBlobGas)
 			}
-			log.Info().Msg("*/-------------------------------------------------------------------------------------------------------------------------------------------------------------------*/")
-			log.Info().Fields(BlockData{
+			blockData := BlockData{
 				BlockHash:      h.Hash(),
 				BlockNumber:    h.Number.Uint64(),
 				BlockTime:      h.Time,
 				BlobBaseFeeWei: currBaseFee.Uint64(),
 				BaseFeeGwei:    float64(h.BaseFee.Uint64()) / params.GWei,
 				Builder:        strings.ToValidUTF8(string(h.Extra), ""),
-			}).Msg("Received new block")
+			}
+			log.Info().Fields(blockData).Msg("Received new block")
+			blockDataList = append(blockDataList, blockData)
+			saveDataToFile(filepath.Join(dataFolder, blockDataFile), blockDataList)
 
 			currentPendingTxs := len(pendingTxs)
 			blobsIncluded := 0
@@ -141,11 +167,13 @@ func main() {
 			for hash, tx := range pendingTxs {
 				r, err := ec.TransactionReceipt(context.Background(), hash)
 				if err == nil && r.BlockHash == h.Hash() {
-					log.Info().Fields(txData(tx, chainID)).Msgf("Transaction was included in block %d in %s", r.BlockNumber.Uint64(), time.Since(txTime[hash]))
-					recordTxInclusion(tx, chainID, time.Since(txTime[hash]))
+					txData := txData(tx, chainID)
+					log.Info().Fields(txData).Msgf("Transaction was included in block %d in %s", r.BlockNumber.Uint64(), time.Since(txTime[hash]))
+					txInclusionList = recordTxInclusion(txInclusionList, tx, chainID, time.Since(txTime[hash]))
 					blobsIncluded += len(tx.BlobHashes())
 					delete(pendingTxs, hash)
 					delete(txTime, hash)
+					saveDataToFile(filepath.Join(dataFolder, txInclusionFile), txInclusionList)
 					continue
 				}
 				acc, err := gethtypes.Sender(gethtypes.NewCancunSigner(chainID), tx)
@@ -160,19 +188,20 @@ func main() {
 					continue
 				}
 				if tx.Nonce() < currNonce {
-					log.Info().Fields(txData(tx, chainID)).Msgf("Transaction has been successfully replaced and included on chain in %s", time.Since(txTime[hash]))
+					txData := txData(tx, chainID)
+					log.Info().Fields(txData).Msgf("Transaction has been successfully replaced and included on chain in %s", time.Since(txTime[hash]))
 					delete(pendingTxs, hash)
 					delete(txTime, hash)
 					continue
 				}
 				if tx.Nonce() != currNonce {
-					// This is not an immediate transaction that can be included.
 					continue
 				}
 				if tx.BlobGasFeeCap().Cmp(currBaseFee) >= 0 {
 					viabletxs++
 					viableBlobs += len(tx.BlobHashes())
-					log.Info().Fields(txData(tx, chainID)).Msgf("Transaction was still not included after %s", time.Since(txTime[hash]))
+					txData := txData(tx, chainID)
+					log.Info().Fields(txData).Msgf("Transaction was still not included after %s", time.Since(txTime[hash]))
 				}
 			}
 
@@ -188,7 +217,15 @@ func main() {
 				"currentPendingTxs":  len(pendingTxs),
 				"viableTxs":          viabletxs,
 			}).Msg("Post block Summary for blob transactions")
-			log.Info().Msg("*/-------------------------------------------------------------------------------------------------------------------------------------------------------------------*/")
+		}
+	}
+}
+
+func createDataFolder() {
+	if _, err := os.Stat(dataFolder); os.IsNotExist(err) {
+		err = os.Mkdir(dataFolder, 0755)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("Could not create data folder %s", dataFolder)
 		}
 	}
 }
@@ -212,11 +249,11 @@ func txData(tx *gethtypes.Transaction, chainID *big.Int) TxData {
 	}
 }
 
-func recordTxMetrics(tx *gethtypes.Transaction, chainID *big.Int, txTime time.Time) {
+func recordTxMetrics(txMetricsList []TxMetricsData, tx *gethtypes.Transaction, chainID *big.Int, txTime time.Time) []TxMetricsData {
 	acc, err := gethtypes.Sender(gethtypes.NewCancunSigner(chainID), tx)
 	if err != nil {
 		log.Error().Err(err).Msg("Could not get sender's account address")
-		return
+		return txMetricsList
 	}
 	data := TxMetricsData{
 		Account:       acc,
@@ -224,15 +261,15 @@ func recordTxMetrics(tx *gethtypes.Transaction, chainID *big.Int, txTime time.Ti
 		BlobGasFeeCap: tx.BlobGasFeeCap().Uint64(),
 		TxTime:        txTime.String(),
 	}
-
 	log.Info().Msgf("Observed Transaction: Account=%s, BlobCount=%d, BlobGasFeeCap=%d, TxTime=%s", data.Account, data.BlobCount, data.BlobGasFeeCap, data.TxTime)
+	return append(txMetricsList, data)
 }
 
-func recordTxInclusion(tx *gethtypes.Transaction, chainID *big.Int, inclusionDelay time.Duration) {
+func recordTxInclusion(txInclusionList []TxInclusionData, tx *gethtypes.Transaction, chainID *big.Int, inclusionDelay time.Duration) []TxInclusionData {
 	acc, err := gethtypes.Sender(gethtypes.NewCancunSigner(chainID), tx)
 	if err != nil {
 		log.Error().Err(err).Msg("Could not get sender's account address")
-		return
+		return txInclusionList
 	}
 
 	gasTip, _ := tx.GasTipCap().Float64()
@@ -244,4 +281,19 @@ func recordTxInclusion(tx *gethtypes.Transaction, chainID *big.Int, inclusionDel
 		GasTipGwei:     gasTipGwei,
 	}
 	log.Info().Msgf("Transaction Inclusion: Account=%s, BlobCount=%d, InclusionDelay=%fs, GasTip(Gwei)=%f", data.Account, data.BlobCount, data.InclusionDelay, data.GasTipGwei)
+	return append(txInclusionList, data)
+}
+
+func saveDataToFile(filename string, data interface{}) {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatal().Err(err).Msgf("Could not create file %s", filename)
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(data); err != nil {
+		log.Fatal().Err(err).Msgf("Could not encode data to file %s", filename)
+	}
 }
