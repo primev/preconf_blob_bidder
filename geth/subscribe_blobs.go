@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -95,10 +96,10 @@ func main() {
 	pendingTxs := make(map[common.Hash]*gethtypes.Transaction)
 	txTime := make(map[common.Hash]time.Time)
 
-	var txDataList []TxData
-	var blockDataList []BlockData
-	var txMetricsList []TxMetricsData
-	var txInclusionList []TxInclusionData
+	txDataList := loadDataFromFile[TxData](filepath.Join(dataFolder, txDataFile))
+	blockDataList := loadDataFromFile[BlockData](filepath.Join(dataFolder, blockDataFile))
+	txMetricsList := loadDataFromFile[TxMetricsData](filepath.Join(dataFolder, txMetricsFile))
+	txInclusionList := loadDataFromFile[TxInclusionData](filepath.Join(dataFolder, txInclusionFile))
 
 	createDataFolder()
 
@@ -296,4 +297,25 @@ func saveDataToFile(filename string, data interface{}) {
 	if err := encoder.Encode(data); err != nil {
 		log.Fatal().Err(err).Msgf("Could not encode data to file %s", filename)
 	}
+}
+
+func loadDataFromFile[T any](filename string) []T {
+	var data []T
+	if _, err := os.Stat(filename); err == nil {
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("Could not open file %s", filename)
+		}
+		defer file.Close()
+
+		byteValue, err := ioutil.ReadAll(file)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("Could not read file %s", filename)
+		}
+
+		if err := json.Unmarshal(byteValue, &data); err != nil {
+			log.Fatal().Err(err).Msgf("Could not unmarshal data from file %s", filename)
+		}
+	}
+	return data
 }
