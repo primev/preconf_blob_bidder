@@ -1,4 +1,4 @@
-package biddingwindow
+package mevcommit
 
 import (
 	"context"
