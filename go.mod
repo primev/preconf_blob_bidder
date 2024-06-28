@@ -4,9 +4,8 @@ go 1.22
 
 require (
 	github.com/ethereum/go-ethereum v1.14.5
-	github.com/primev/mev-commit/p2p v0.0.0-20240621133140-c80ebadb38eb
+	github.com/primev/mev-commit/p2p v0.0.0-20240621133140-c80ebadb38eb // 0.3.1
 	github.com/rs/zerolog v1.33.0
-	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.34.1
 )
