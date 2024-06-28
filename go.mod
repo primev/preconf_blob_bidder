@@ -1,4 +1,4 @@
-module github.com/Evan-Kim2028/example_bidder_go
+module github.com/primev/preconf_blob_bidder
 
 go 1.22
 

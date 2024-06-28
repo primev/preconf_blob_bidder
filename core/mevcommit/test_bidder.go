@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	biddingwindow "github.com/Evan-Kim2028/example_bidder_go/core/mev_commit"
+	"github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
 func main() {
@@ -13,7 +13,7 @@ func main() {
 }
 
 func useBiddingWindow() {
-	cfg := biddingwindow.Config{
+	cfg := mevcommit.Config{
 		ServerAddress: "localhost:13524",
 		LogFmt:        "text",
 		LogLevel:      "info",
@@ -23,14 +23,14 @@ func useBiddingWindow() {
 	fmt.Println("Start time: ", time.Now())
 
 	// Get the minimum deposit
-	response, err := biddingwindow.GetMinDeposit(cfg)
+	response, err := mevcommit.GetMinDeposit(cfg)
 	if err != nil {
 		log.Fatalf("Failed to get minimum deposit: %v", err)
 	}
 	fmt.Printf("Minimum deposit required: %v\n", response.Amount)
 
 	// Deposit the minimum amount and get the window number
-	windowNumber, err := biddingwindow.DepositMinBidAmount(cfg)
+	windowNumber, err := mevcommit.DepositMinBidAmount(cfg)
 	if err != nil {
 		log.Fatalf("Failed to deposit minimum bid amount: %v", err)
 	}
@@ -41,7 +41,7 @@ func useBiddingWindow() {
 	time.Sleep(11 * time.Minute)
 
 	// Withdraw the funds from the specified window number
-	if err := biddingwindow.WithdrawFunds(cfg, windowNumber); err != nil {
+	if err := mevcommit.WithdrawFunds(cfg, windowNumber); err != nil {
 		log.Fatalf("Failed to withdraw funds: %v", err)
 	}
 
