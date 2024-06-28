@@ -4,14 +4,14 @@ import (
 	"testing"
 )
 
-func TestNewBidderClient(t *testing.T) {
+func TestNewClient(t *testing.T) {
 	cfg := Config{
 		ServerAddress: "localhost:13524", // Default address for mevcommit gRPC server
 		LogFmt:        "json",            // Example log format
 		LogLevel:      "info",            // Example log level
 	}
 
-	client, err := newBidderClient(cfg)
+	client, err := NewClient(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

@@ -16,13 +16,14 @@ type Config struct {
 	LogLevel      string `json:"log_level" yaml:"log_level"`
 }
 
-// newBidderClient creates a new gRPC client connection to the bidder service
-func newBidderClient(cfg Config) (pb.BidderClient, error) {
+// NewClient creates a new gRPC client connection to the bidder service and returns a bidder instance.
+func NewClient(cfg Config) (*bidder, error) {
 	conn, err := grpc.NewClient(cfg.ServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
+		fmt.Printf("Failed to connect to gRPC server: %v", err)
+		return nil, err
 	}
 
 	client := pb.NewBidderClient(conn)
-	return client, nil
+	return &bidder{client: client}, nil
 }
