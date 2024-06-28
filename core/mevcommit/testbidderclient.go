@@ -1,19 +1,14 @@
-package biddingwindow
+package mevcommit
 
 import (
 	"fmt"
-	"log"
+	"testing"
 	"time"
-
-	"github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-func main() {
-	useBiddingWindow()
-}
-
-func useBiddingWindow() {
-	cfg := mevcommit.Config{
+// tests an automated deposit and withdrawal of funds from the bidding window using the minimum deposit amount.
+func TestBiddingWindow(t *testing.T) {
+	cfg := Config{
 		ServerAddress: "localhost:13524",
 		LogFmt:        "text",
 		LogLevel:      "info",
@@ -23,26 +18,26 @@ func useBiddingWindow() {
 	fmt.Println("Start time: ", time.Now())
 
 	// Get the minimum deposit
-	response, err := mevcommit.GetMinDeposit(cfg)
+	response, err := GetMinDeposit(cfg)
 	if err != nil {
-		log.Fatalf("Failed to get minimum deposit: %v", err)
+		t.Fatalf("Failed to get minimum deposit: %v", err)
 	}
 	fmt.Printf("Minimum deposit required: %v\n", response.Amount)
 
 	// Deposit the minimum amount and get the window number
-	windowNumber, err := mevcommit.DepositMinBidAmount(cfg)
+	windowNumber, err := DepositMinBidAmount(cfg)
 	if err != nil {
-		log.Fatalf("Failed to deposit minimum bid amount: %v", err)
+		t.Fatalf("Failed to deposit minimum bid amount: %v", err)
 	}
 	fmt.Printf("Deposited into window number: %v\n", windowNumber)
 
 	// Wait for 11 minutes before withdrawing the funds
 	fmt.Println("Waiting for 11 minutes before withdrawing the funds...")
-	time.Sleep(11 * time.Minute)
+	time.Sleep(11 * time.Second) // Reduced for testing purposes
 
 	// Withdraw the funds from the specified window number
-	if err := mevcommit.WithdrawFunds(cfg, windowNumber); err != nil {
-		log.Fatalf("Failed to withdraw funds: %v", err)
+	if err := WithdrawFunds(cfg, windowNumber); err != nil {
+		t.Fatalf("Failed to withdraw funds: %v", err)
 	}
 
 	fmt.Println("End time: ", time.Now())

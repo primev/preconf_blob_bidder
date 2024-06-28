@@ -16,18 +16,18 @@ type Config struct {
 	LogLevel      string `json:"log_level" yaml:"log_level"`
 }
 
-type BiddingWindow struct {
+type bidder struct {
 	client pb.BidderClient
 }
 
-func NewBiddingWindow(grpcAddress string) (*BiddingWindow, error) {
+func NewBiddingWindow(grpcAddress string) (*bidder, error) {
 	conn, err := grpc.Dial(grpcAddress, grpc.WithInsecure())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
 	}
 
 	client := pb.NewBidderClient(conn)
-	return &BiddingWindow{client: client}, nil
+	return &bidder{client: client}, nil
 }
 
 // GetMinDeposit retrieves the minimum deposit required for bidding from the server.
