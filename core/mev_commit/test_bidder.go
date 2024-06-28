@@ -1,14 +1,18 @@
-package main
+package biddingwindow
 
 import (
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/Evan-Kim2028/example_bidder_go/biddingwindow"
+	biddingwindow "github.com/Evan-Kim2028/example_bidder_go/core/mev_commit"
 )
 
 func main() {
+	useBiddingWindow()
+}
+
+func useBiddingWindow() {
 	cfg := biddingwindow.Config{
 		ServerAddress: "localhost:13524",
 		LogFmt:        "text",
