@@ -13,11 +13,6 @@ type bidder struct {
 	client pb.BidderClient
 }
 
-// NewBiddingWindow creates a new bidding window with an existing gRPC client connection.
-func NewBiddingWindow(client pb.BidderClient) *bidder {
-	return &bidder{client: client}
-}
-
 // GetMinDeposit retrieves the minimum deposit required for bidding from the server.
 func (b *bidder) GetMinDeposit() (*pb.DepositResponse, error) {
 	ctx := context.Background()
