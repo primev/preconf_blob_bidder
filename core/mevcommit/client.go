@@ -1,11 +1,15 @@
 package mevcommit
 
 import (
+	"log"
+
 	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
 	"google.golang.org/grpc"
 
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -16,8 +20,8 @@ type Config struct {
 	LogLevel      string `json:"log_level" yaml:"log_level"`
 }
 
-// NewClient creates a new gRPC client connection to the bidder service and returns a bidder instance.
-func NewClient(cfg Config) (*bidder, error) {
+// NewBidClient creates a new gRPC client connection to the bidder service and returns a bidder instance.
+func NewBidClient(cfg Config) (*bidder, error) {
 	conn, err := grpc.NewClient(cfg.ServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		fmt.Printf("Failed to connect to gRPC server: %v", err)
@@ -26,4 +30,15 @@ func NewClient(cfg Config) (*bidder, error) {
 
 	client := pb.NewBidderClient(conn)
 	return &bidder{client: client}, nil
+}
+
+// connect to mev-commit chain
+func NewMevCommitClient(endpoint string) (*ethclient.Client, error) {
+	client, err := rpc.Dial(endpoint)
+	if err != nil {
+		log.Println(err)
+	}
+	// connect to eth client...will use this to get mev-commit logs? Which events I need to get?
+	ec := ethclient.NewClient(client)
+	return ec, nil
 }
