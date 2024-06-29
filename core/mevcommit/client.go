@@ -1,8 +1,8 @@
 package mevcommit
 
 import (
-	"os"
 	"log"
+	"os"
 
 	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
 	"google.golang.org/grpc"
@@ -39,13 +39,13 @@ func NewMevCommitClient(endpoint string) (*ethclient.Client, error) {
 	if err != nil {
 		log.Println(err)
 	}
-	// connect to eth client...will use this to get mev-commit logs? Which events I need to get?
+
 	ec := ethclient.NewClient(client)
 	return ec, nil
 }
 
-// loadABI loads the ABI from the specified file path
-func loadABI(filePath string) (string, error) {
+// LoadABI loads the ABI from the specified file path
+func LoadABI(filePath string) (string, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", err

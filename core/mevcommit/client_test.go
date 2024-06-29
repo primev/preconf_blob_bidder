@@ -11,7 +11,7 @@ func TestNewClient(t *testing.T) {
 		LogLevel:      "info",            // Example log level
 	}
 
-	client, err := NewClient(cfg)
+	client, err := NewBidClient(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
