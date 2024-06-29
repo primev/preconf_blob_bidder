@@ -1,6 +1,7 @@
 package mevcommit
 
 import (
+	"os"
 	"log"
 
 	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
@@ -41,4 +42,13 @@ func NewMevCommitClient(endpoint string) (*ethclient.Client, error) {
 	// connect to eth client...will use this to get mev-commit logs? Which events I need to get?
 	ec := ethclient.NewClient(client)
 	return ec, nil
+}
+
+// loadABI loads the ABI from the specified file path
+func loadABI(filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
