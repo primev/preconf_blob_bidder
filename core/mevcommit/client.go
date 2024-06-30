@@ -40,7 +40,7 @@ type AuthAcct struct {
 	PrivateKey *ecdsa.PrivateKey
 	PublicKey  *ecdsa.PublicKey
 	Address    common.Address
-	Auth *bind.TransactOpts
+	Auth       *bind.TransactOpts
 }
 
 // NewBidderClient creates a new gRPC client connection to the bidder service and returns a bidder instance.
@@ -97,12 +97,11 @@ func AuthenticateAddress(privateKeyHex string, client *ethclient.Client) (*AuthA
 		log.Fatalf("Failed to create authorized transactor: %v", err)
 	}
 
-
 	return &AuthAcct{
 		PrivateKey: privateKey,
 		PublicKey:  publicKeyECDSA,
 		Address:    address,
 		// Nonce:      nonce,
-		Auth:       auth,
+		Auth: auth,
 	}, nil
 }
