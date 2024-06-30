@@ -8,13 +8,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// bidder utilizes the mevcommit bidder client to interact with the mevcommit chain.
-type bidder struct {
-	client pb.BidderClient
-}
-
-// GetMinDeposit retrieves the minimum deposit required for bidding from the server.
-func (b *bidder) GetMinDeposit() (*pb.DepositResponse, error) {
+// GetMinDeposit retrieves the minimum deposit required for bidding using mev-commit bidder api.
+func (b *Bidder) GetMinDeposit() (*pb.DepositResponse, error) {
 	ctx := context.Background()
 	response, err := b.client.GetMinDeposit(ctx, &pb.EmptyMessage{})
 	if err != nil {
@@ -23,8 +18,8 @@ func (b *bidder) GetMinDeposit() (*pb.DepositResponse, error) {
 	return response, nil
 }
 
-// DepositMinBidAmount deposits the minimum bid amount into the bidding window.
-func (b *bidder) DepositMinBidAmount() (int64, error) {
+// DepositMinBidAmount deposits the minimum bid amount into the bidding window using mev-commit bidder api.
+func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	minDepositResponse, err := b.GetMinDeposit()
 	if err != nil {
 		return 0, fmt.Errorf("failed to get minimum deposit: %w", err)
@@ -46,8 +41,8 @@ func (b *bidder) DepositMinBidAmount() (int64, error) {
 	return windowNumber, nil
 }
 
-// WithdrawFunds withdraws the deposited funds from the specified bidding window.
-func (b *bidder) WithdrawFunds(windowNumber int64) error {
+// WithdrawFunds withdraws the deposited funds from the specified bidding window. using mev-commit bidder api
+func (b *Bidder) WithdrawFunds(windowNumber int64) error {
 	withdrawRequest := &pb.WithdrawRequest{
 		WindowNumber: wrapperspb.UInt64(uint64(windowNumber)),
 	}
