@@ -20,9 +20,7 @@ import (
 // Each window is 10 blocks, so about 120 seconds. After 360 seconds, or 6 minutes it should be good to withdraw from the window.
 // The oracle lag also needs to be taken into account, which lags behind by 20 blocks.
 
-func main() {
-	// Define command-line flags for the private key and endpoint
-	// privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
+func biddingWindow() {
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	flag.Parse()
@@ -30,7 +28,6 @@ func main() {
 		log.Fatal("Endpoint is required. Use the -endpoint flag to provide it.")
 	}
 
-	// NewGethClient connects to the MEV-Commit chain given an endpoint.
 	client, err := bb.NewGethClient(*endpoint)
 	if err != nil {
 		log.Fatalf("Failed to connect to MEV-Commit chain: %v", err)

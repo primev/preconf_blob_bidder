@@ -9,7 +9,7 @@ import (
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-func main() {
+func sendTransfer() {
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	flag.Parse()
