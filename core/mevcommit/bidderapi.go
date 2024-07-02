@@ -18,7 +18,7 @@ func (b *Bidder) GetMinDeposit() (*pb.DepositResponse, error) {
 	return response, nil
 }
 
-// DepositMinBidAmount deposits the minimum bid amount into the bidding window using mev-commit bidder api.
+// DepositMinBidAmount deposits the minimum bid amount into the current bidding window
 func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	minDepositResponse, err := b.GetMinDeposit()
 	if err != nil {
@@ -41,7 +41,7 @@ func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	return windowNumber, nil
 }
 
-// WithdrawFunds withdraws the deposited funds from the specified bidding window. using mev-commit bidder api
+// WithdrawFunds withdraws the deposited funds from the specified bidding window.
 func (b *Bidder) WithdrawFunds(windowNumber int64) error {
 	withdrawRequest := &pb.WithdrawRequest{
 		WindowNumber: wrapperspb.UInt64(uint64(windowNumber)),
@@ -54,5 +54,25 @@ func (b *Bidder) WithdrawFunds(windowNumber int64) error {
 	}
 
 	fmt.Printf("Withdraw successful: %v\n", response)
+	return nil
+}
+
+// SendBid sends a bid with the specified parameters.
+func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) error {
+	bidRequest := &pb.Bid{
+		TxHashes:            txHashes,
+		Amount:              amount,
+		BlockNumber:         blockNumber,
+		DecayStartTimestamp: decayStart,
+		DecayEndTimestamp:   decayEnd,
+	}
+
+	ctx := context.Background()
+	response, err := b.client.SendBid(ctx, bidRequest)
+	if err != nil {
+		return fmt.Errorf("failed to send bid: %w", err)
+	}
+
+	fmt.Printf("Bid sent successfully: %v\n", response)
 	return nil
 }

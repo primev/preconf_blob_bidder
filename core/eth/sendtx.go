@@ -68,3 +68,4 @@ func SelfSendETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *
 
 	return signedTx.Hash().Hex(), nil
 }
+

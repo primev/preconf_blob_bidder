@@ -176,3 +176,5 @@ func WithdrawFromWindow(client *ethclient.Client, authAcct *AuthAcct, window *bi
 		return nil, fmt.Errorf("withdrawal failed")
 	}
 }
+
+
