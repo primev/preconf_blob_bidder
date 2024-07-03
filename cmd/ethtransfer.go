@@ -30,7 +30,7 @@ func sendTransfer() {
 	}
 
 	// Send ETH Transfer
-	txHash, err := ee.SelfSendETHTransfer(client, *authAcct, big.NewInt(100000), 3000000, []byte{0x4c, 0xdc, 0xeb, 0x20})
+	txHash, err := ee.SelfETHTransfer(client, *authAcct, big.NewInt(100000), 3000000, []byte{0x4c, 0xdc, 0xeb, 0x20})
 	if err != nil {
 		log.Fatalf("Failed to send transaction: %v", err)
 	}
