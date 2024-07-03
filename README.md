@@ -9,7 +9,8 @@ This repository shows an example workflow that attaches preconfirmations to diff
 
 ### Installation
 ```git clone https://github.com/your-repository/preconf_blob_bidder.git
-cd preconf_blob_bidder```
+cd preconf_blob_bidder
+```
 
 
 ### Making a preconf bid
