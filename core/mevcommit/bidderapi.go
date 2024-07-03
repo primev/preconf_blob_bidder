@@ -39,7 +39,6 @@ func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	}
 
 	windowNumber := int64(response.WindowNumber.Value)
-	fmt.Printf("Deposited minimum bid amount successfully into window number: %v\n", windowNumber)
 	return windowNumber, nil
 }
 
