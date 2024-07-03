@@ -1,5 +1,6 @@
 package eth
 
+// CURRENTLY THIS FILE IS NOT BEING USED FOR ANYTHING.
 import (
 	"context"
 	"encoding/json"

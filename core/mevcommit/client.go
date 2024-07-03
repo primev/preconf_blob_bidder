@@ -35,7 +35,7 @@ type GethConfig struct {
 	Endpoint string `json:"endpoint" yaml:"endpoint"`
 }
 
-// AuthAcct holds the private key, public key, address, and authentication.
+// AuthAcct holds the private key, public key, address, and authentication for a given private key. 
 type AuthAcct struct {
 	PrivateKey *ecdsa.PrivateKey
 	PublicKey  *ecdsa.PublicKey

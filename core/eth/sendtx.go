@@ -11,7 +11,7 @@ import (
 )
 
 // send an eth transfer to self
-func SelfSendETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.Int, gasLimit uint64, data []byte) (string, error) {
+func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.Int, gasLimit uint64, data []byte) (string, error) {
 	// Get Address nonce
 	nonce, err := client.PendingNonceAt(context.Background(), authAcct.Address)
 	if err != nil {
@@ -25,10 +25,10 @@ func SelfSendETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *
 	}
 	baseFee := header.BaseFee
 
-	// Set max priority fee per gas to twice the max fee per gas
+	// Set max priority fee per gas as twice the base fee
 	maxPriorityFee := new(big.Int).Mul(baseFee, big.NewInt(2))
 
-	// Calculate max fee per gas
+	// Calculate max fee per gas as twice the max priority fee
 	maxFeePerGas := new(big.Int).Mul(maxPriorityFee, big.NewInt(2))
 
 	// Get chainID

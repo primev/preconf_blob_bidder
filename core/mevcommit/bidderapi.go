@@ -19,6 +19,8 @@ func (b *Bidder) GetMinDeposit() (*pb.DepositResponse, error) {
 }
 
 // DepositMinBidAmount deposits the minimum bid amount into the current bidding window
+// TODO - add in window_number parameter as optional Uint64. If the value is not passed in, then the function will automatically use the latest window.
+// TODO - add in block_number parameter as optional Uint64. It will calculate the window based on the block number.
 func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	minDepositResponse, err := b.GetMinDeposit()
 	if err != nil {
@@ -57,7 +59,7 @@ func (b *Bidder) WithdrawFunds(windowNumber int64) error {
 	return nil
 }
 
-// SendBid sends a bid with the specified parameters.
+// SendBid sends a preconf bid with the specified parameters.
 func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) error {
 	bidRequest := &pb.Bid{
 		TxHashes:            txHashes,
