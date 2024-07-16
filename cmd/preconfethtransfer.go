@@ -28,18 +28,20 @@ func main() {
 	}
 	fmt.Println("Connected to mev-commit client")
 
+	// TODO 7/10 min deposit no longer exists in 0.4.0 release
 	// Get the minimum deposit and deposit the minimum amount in the current bid window
-	response, err := bidderClient.GetMinDeposit()
-	if err != nil {
-		log.Fatalf("Failed to get minimum deposit: %v", err)
-	}
-	fmt.Printf("Minimum deposit required: %v\n", response.Amount)
+	// response, err := bidderClient.GetMinDeposit()
+	// if err != nil {
+	// 	log.Fatalf("Failed to get minimum deposit: %v", err)
+	// }
+	// fmt.Printf("Minimum deposit required: %v\n", response.Amount)
 
-	windowNumber, err := bidderClient.DepositMinBidAmount()
-	if err != nil {
-		log.Fatalf("Failed to deposit minimum bid amount: %v", err)
-	}
-	fmt.Printf("Deposited into window: %v\n", windowNumber)
+	// TODO 7/10 as of 0.4.0 release, depositMinBidAmount no longer seems to exist
+	// windowNumber, err := bidderClient.DepositMinBidAmount()
+	// if err != nil {
+	// 	log.Fatalf("Failed to deposit minimum bid amount: %v", err)
+	// }
+	// fmt.Printf("Deposited into window: %v\n", windowNumber)
 
 	// Start Holesky client with command line flags
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
@@ -75,10 +77,6 @@ func main() {
 
 	log.Printf("tx sent: %s", txHash)
 
-	// TODO - Fix. Currently not working.
-	// Not sure if it's because it's just listening to the latest block. Ideal behavior is that it listenes for events for every new block that occurs.
-	// go bb.ListenForCommitmentStoredEvent(client)
-
 	// Convert uint64 to int64. Add +1 to be the next block number
 	blockNumberInt64 := int64(blockNumber) + 1
 	// print the preconf block number
@@ -90,15 +88,20 @@ func main() {
 	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
 	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
-	// send bid
-	bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
-
-	// After preconf bid is sent and confirmed, wait 11 minutes and then withdraw the funds.
-	time.Sleep(11 * time.Minute)
-
-	// Withdraw the amount from the window
-	err = bidderClient.WithdrawFunds(windowNumber)
+	response, err := bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
 	if err != nil {
-		log.Fatalf("Failed to withdraw funds: %v", err)
+		log.Fatalf("Failed to send bid: %v", err)
 	}
+
+	fmt.Printf("Bid sent successfully: %v\n", response)
+
+	// 7/10/24 - 0.4.0 release has auto deposits so this code is no longer needed.
+	// After preconf bid is sent and confirmed, wait 11 minutes and then withdraw the funds.
+	// time.Sleep(11 * time.Minute)
+
+	// // Withdraw the amount from the window
+	// err = bidderClient.WithdrawFunds(windowNumber)
+	// if err != nil {
+	// 	log.Fatalf("Failed to withdraw funds: %v", err)
+	// }
 }

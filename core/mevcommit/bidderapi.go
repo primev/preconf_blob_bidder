@@ -3,6 +3,7 @@ package mevcommit
 import (
 	"context"
 	"fmt"
+	"io"
 
 	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -58,8 +59,8 @@ func (b *Bidder) WithdrawFunds(windowNumber int64) error {
 	return nil
 }
 
-// SendBid sends a preconf bid with the specified parameters.
-func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) error {
+// SendBid sends a preconf bid with the specified parameters and returns the response.
+func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
 	bidRequest := &pb.Bid{
 		TxHashes:            txHashes,
 		Amount:              amount,
@@ -71,9 +72,20 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 	ctx := context.Background()
 	response, err := b.client.SendBid(ctx, bidRequest)
 	if err != nil {
-		return fmt.Errorf("failed to send bid: %w", err)
+		return nil, fmt.Errorf("failed to send bid: %w", err)
 	}
+	for {
+		msg, err := response.Recv()
+		if err == io.EOF {
+			// End of stream
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to send bid: %w", err)
+		}
 
-	fmt.Printf("Bid sent successfully: %v\n", response)
-	return nil
+		fmt.Printf("Bid sent successfully: %v\n", msg)
+	}
+	// fmt.Printf("Bid sent successfully: %v\n", response)
+	return response, nil
 }
