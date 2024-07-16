@@ -13,7 +13,7 @@ import (
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-func main() {
+func sendETHTransfer() {
 
 	// Start mevcommit bidder node client
 	cfg := bb.BidderConfig{
@@ -84,7 +84,7 @@ func main() {
 	currentTime := time.Now().UnixMilli()
 	// bid preconf parameters
 	txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-	amount := "1000000000" // Specify amount in wei
+	amount := "1000000000000" // Specify amount in wei
 	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
 	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
@@ -93,7 +93,7 @@ func main() {
 		log.Fatalf("Failed to send bid: %v", err)
 	}
 
-	fmt.Printf("Bid sent successfully: %v\n", response)
+	fmt.Printf("Bid response: %v\n", response)
 
 	// 7/10/24 - 0.4.0 release has auto deposits so this code is no longer needed.
 	// After preconf bid is sent and confirmed, wait 11 minutes and then withdraw the funds.
