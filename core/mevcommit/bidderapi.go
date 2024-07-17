@@ -47,7 +47,6 @@ func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	return windowNumber, nil
 }
 
-// SendBid sends a preconf bid with the specified parameters and returns the response.
 func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
@@ -63,7 +62,12 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 
 	log.Info("Sending bid request", "txHashes", txHashes, "amount", amount, "blockNumber", blockNumber, "decayStart", decayStart, "decayEnd", decayEnd)
 
+	// Timer before creating context
+	startTimeBeforeContext := time.Now()
+	log.Info("Start time: ", startTimeBeforeContext)
+
 	ctx := context.Background()
+
 	response, err := b.client.SendBid(ctx, bidRequest)
 	if err != nil {
 		log.Error("Failed to send bid", "error", err)
@@ -88,6 +92,10 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 		log.Info("Bid sent successfully", "response", msg)
 		responses = append(responses, msg)
 	}
+
+	// Timer before saving bid responses
+	startTimeBeforeSaveResponses := time.Now()
+	log.Info("End Time", "startTimeBeforeSaveResponses", startTimeBeforeSaveResponses)
 
 	saveBidResponses("data/response.json", responses)
 
