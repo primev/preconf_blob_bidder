@@ -5,9 +5,12 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
@@ -21,11 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
-)
-
-const (
-	escalateMultiplier = 2
-	// numBlobs           = 2 // Set the number of blobs here
 )
 
 // send an eth transfer to self
@@ -174,18 +172,65 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 		return "", err
 	}
 
-	log.Info("transaction parameters",
-		"hash", signedTx.Hash().String(),
-		"chainID", signedTx.ChainId(),
-		"nonce", signedTx.Nonce(),
-		"gasTipCap", signedTx.GasTipCap(),
-		"gasFeeCap", signedTx.GasFeeCap(),
-		"gasLimit", signedTx.Gas(),
-		"to", signedTx.To(),
-		"blobFeeCap", signedTx.BlobGasFeeCap(),
-		"blobHashes", signedTx.BlobHashes())
+	currentTimeMillis := time.Now().UnixNano() / int64(time.Millisecond)
+
+	transactionParameters := map[string]interface{}{
+		"hash":       signedTx.Hash().String(),
+		"chainID":    signedTx.ChainId(),
+		"nonce":      signedTx.Nonce(),
+		"gasTipCap":  signedTx.GasTipCap(),
+		"gasFeeCap":  signedTx.GasFeeCap(),
+		"gasLimit":   signedTx.Gas(),
+		"to":         signedTx.To(),
+		"blobFeeCap": signedTx.BlobGasFeeCap(),
+		"blobHashes": signedTx.BlobHashes(),
+		"timeSubmitted": currentTimeMillis,
+		"numBlobs" : numBlobs,
+	}
+
+	log.Info("transaction parameters", transactionParameters)
+	// save transaction parameters to a JSON file
+	saveTransactionParameters("data/blobs.json", transactionParameters)
 
 	return signedTx.Hash().String(), nil
+}
+
+// saveTransactionParameters saves transaction parameters to a JSON file
+func saveTransactionParameters(filename string, params map[string]interface{}) {
+	// Ensure the directory exists
+	dir := filepath.Dir(filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Error("Failed to create directory", "directory", dir, "error", err)
+		return
+	}
+
+	var transactions []map[string]interface{}
+
+	// Read existing file content
+	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Error("Failed to open file", "filename", filename, "error", err)
+		return
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&transactions); err != nil && err.Error() != "EOF" {
+		log.Error("Failed to decode existing JSON data", "error", err)
+		return
+	}
+
+	// Append the new transaction parameters
+	transactions = append(transactions, params)
+
+	// Write the updated transactions array to the file
+	file.Seek(0, 0)  // Move to the beginning of the file
+	file.Truncate(0) // Clear the file content
+
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(transactions); err != nil {
+		log.Error("Failed to encode parameters to JSON", "error", err)
+	}
 }
 
 func makeSidecar(blobs []kzg4844.Blob) *types.BlobTxSidecar {

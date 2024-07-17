@@ -2,11 +2,15 @@ package mevcommit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // GetMinDeposit retrieves the minimum deposit required for bidding using mev-commit bidder api.
@@ -43,24 +47,12 @@ func (b *Bidder) DepositMinBidAmount() (int64, error) {
 	return windowNumber, nil
 }
 
-// WithdrawFunds withdraws the deposited funds from the specified bidding window.
-func (b *Bidder) WithdrawFunds(windowNumber int64) error {
-	withdrawRequest := &pb.WithdrawRequest{
-		WindowNumber: wrapperspb.UInt64(uint64(windowNumber)),
-	}
-
-	ctx := context.Background()
-	response, err := b.client.Withdraw(ctx, withdrawRequest)
-	if err != nil {
-		return fmt.Errorf("failed to withdraw funds: %w", err)
-	}
-
-	fmt.Printf("Withdraw successful: %v\n", response)
-	return nil
-}
-
 // SendBid sends a preconf bid with the specified parameters and returns the response.
 func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
+	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
+	glogger.Verbosity(log.LevelInfo)
+	log.SetDefault(log.NewLogger(glogger))
+
 	bidRequest := &pb.Bid{
 		TxHashes:            txHashes,
 		Amount:              amount,
@@ -69,11 +61,19 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 		DecayEndTimestamp:   decayEnd,
 	}
 
+	log.Info("Sending bid request", "txHashes", txHashes, "amount", amount, "blockNumber", blockNumber, "decayStart", decayStart, "decayEnd", decayEnd)
+
 	ctx := context.Background()
 	response, err := b.client.SendBid(ctx, bidRequest)
 	if err != nil {
+		log.Error("Failed to send bid", "error", err)
 		return nil, fmt.Errorf("failed to send bid: %w", err)
 	}
+
+	var responses []interface{}
+	submitTimestamp := time.Now().Unix()
+	saveBidRequest("data/bid.json", bidRequest, submitTimestamp)
+
 	for {
 		msg, err := response.Recv()
 		if err == io.EOF {
@@ -81,11 +81,92 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 			break
 		}
 		if err != nil {
+			log.Error("Failed to receive bid response", "error", err)
 			return nil, fmt.Errorf("failed to send bid: %w", err)
 		}
 
-		fmt.Printf("Bid sent successfully: %v\n", msg)
+		log.Info("Bid sent successfully", "response", msg)
+		responses = append(responses, msg)
 	}
-	// fmt.Printf("Bid sent successfully: %v\n", response)
+
+	saveBidResponses("data/response.json", responses)
+
 	return response, nil
+}
+
+// saveBidRequest saves bid request and timestamp to a JSON file
+func saveBidRequest(filename string, bidRequest *pb.Bid, timestamp int64) {
+	// Ensure the directory exists
+	dir := filepath.Dir(filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Error("Failed to create directory", "directory", dir, "error", err)
+		return
+	}
+
+	data := map[string]interface{}{
+		"timestamp":  timestamp,
+		"bidRequest": bidRequest,
+	}
+
+	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Error("Failed to open file", "filename", filename, "error", err)
+		return
+	}
+	defer file.Close()
+
+	// Read existing data
+	var existingData []map[string]interface{}
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&existingData); err != nil && err.Error() != "EOF" {
+		log.Error("Failed to decode existing JSON data", "error", err)
+		return
+	}
+
+	// Append new data
+	existingData = append(existingData, data)
+
+	// Write the updated data back to the file
+	file.Seek(0, 0)
+	file.Truncate(0)
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(existingData); err != nil {
+		log.Error("Failed to encode data to JSON", "error", err)
+	}
+}
+
+// saveBidResponses saves bid responses to a JSON file
+func saveBidResponses(filename string, responses []interface{}) {
+	// Ensure the directory exists
+	dir := filepath.Dir(filename)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Error("Failed to create directory", "directory", dir, "error", err)
+		return
+	}
+
+	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Error("Failed to open file", "filename", filename, "error", err)
+		return
+	}
+	defer file.Close()
+
+	// Read existing data
+	var existingData []interface{}
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&existingData); err != nil && err.Error() != "EOF" {
+		log.Error("Failed to decode existing JSON data", "error", err)
+		return
+	}
+
+	// Append new responses
+	existingData = append(existingData, responses...)
+
+	// Write the updated responses back to the file
+	file.Seek(0, 0)
+	file.Truncate(0)
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(existingData); err != nil {
+		log.Error("Failed to encode data to JSON", "error", err)
+	}
 }
