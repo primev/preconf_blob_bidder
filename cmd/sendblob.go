@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/big"
 	"strings"
 	"time"
 
@@ -54,28 +53,21 @@ func main() {
 	}
 	fmt.Printf("Current block number: %v\n", blockNumber)
 
-	// // Execute Blob Transaction
-	// txHash, err := ee.ExecuteBlobTransaction(client, *authAcct, 2)
-	// if err != nil {
-	// 	log.Fatalf("Failed to execute blob transaction: %v", err)
-	// }
-
-	// Send ETH Transfer
-	txHash, err := ee.SelfETHTransfer(client, *authAcct, big.NewInt(100000), 3000000, []byte{0x4c, 0xdc, 0xeb, 0x20})
+	// Execute Blob Transaction
+	txHash, err := ee.ExecuteBlobTransaction(client, *authAcct, 2)
 	if err != nil {
-		log.Fatalf("Failed to send transaction: %v", err)
+		log.Fatalf("Failed to execute blob transaction: %v", err)
 	}
 
 	log.Printf("tx sent: %s", txHash)
 
-	// Convert uint64 to int64. Add +1 to be the next block number
 	blockNumberInt64 := int64(blockNumber) + 1
-	// print the preconf block number
 	fmt.Printf("Preconf block number: %v\n", blockNumberInt64)
 	currentTime := time.Now().UnixMilli()
-	// bid preconf parameters
+
+	// Send preconf bid
 	txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-	amount := "10000000000000" // Specify amount in wei
+	amount := "1000000000000" // Specify amount in wei
 	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
 	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
@@ -83,16 +75,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to send bid: %v", err)
 	}
-
 	fmt.Printf("Bid response: %v\n", response)
-
-	// 7/10/24 - 0.4.0 release has auto deposits so this code is no longer needed.
-	// After preconf bid is sent and confirmed, wait 11 minutes and then withdraw the funds.
-	// time.Sleep(11 * time.Minute)
-
-	// // Withdraw the amount from the window
-	// err = bidderClient.WithdrawFunds(windowNumber)
-	// if err != nil {
-	// 	log.Fatalf("Failed to withdraw funds: %v", err)
-	// }
 }
