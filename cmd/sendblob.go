@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	ee "github.com/primev/preconf_blob_bidder/core/eth"
@@ -65,15 +67,42 @@ func main() {
 	fmt.Printf("Preconf block number: %v\n", blockNumberInt64)
 	currentTime := time.Now().UnixMilli()
 
-	// Send preconf bid
-	txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-	amount := "1000000000000" // Specify amount in wei
-	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
-	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
+	// Use a WaitGroup to wait for the goroutine to finish
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	response, err := bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
-	if err != nil {
-		log.Fatalf("Failed to send bid: %v", err)
-	}
-	fmt.Printf("Bid response: %v\n", response)
+	// Send preconf bid using a goroutine
+	go func() {
+		defer wg.Done()
+
+		// Print sending preconf
+		fmt.Println("Sending preconf bid...")
+		txHashes := []string{strings.TrimPrefix(txHash, "0x")}
+		amount := "1000000000000" // Specify amount in wei
+		decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
+		decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
+
+		response, err := bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
+		if err != nil {
+			log.Fatalf("Failed to send bid: %v", err)
+		}
+
+		for {
+			msg, err := response.Recv()
+			if err == io.EOF {
+				// End of stream
+				break
+			}
+			if err != nil {
+				log.Printf("Failed to receive bid response: %v", err)
+				return
+			}
+
+			// Print the received message properly
+			fmt.Printf("Bid sent successfully: %+v\n", msg)
+		}
+	}()
+
+	// Wait for the goroutine to finish
+	wg.Wait()
 }
