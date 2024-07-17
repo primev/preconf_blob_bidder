@@ -68,7 +68,7 @@ func main() {
 
 	// Send preconf bid
 	txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-	amount := "1000000000000" // Specify amount in wei
+	amount := "10000000000" // Specify amount in wei
 	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
 	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 

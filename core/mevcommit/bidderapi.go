@@ -62,13 +62,14 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 
 	log.Info("Sending bid request", "txHashes", txHashes, "amount", amount, "blockNumber", blockNumber, "decayStart", decayStart, "decayEnd", decayEnd)
 
-	// Timer before creating context
-	startTimeBeforeContext := time.Now()
-	log.Info("Start time: ", startTimeBeforeContext)
-
 	ctx := context.Background()
 
+	// Timer before creating context
+	startTimeBeforeContext := time.Now()
+
 	response, err := b.client.SendBid(ctx, bidRequest)
+	endTime := time.Since(startTimeBeforeContext).Milliseconds()
+	fmt.Println("Time taken to send bid:", endTime)
 	if err != nil {
 		log.Error("Failed to send bid", "error", err)
 		return nil, fmt.Errorf("failed to send bid: %w", err)
@@ -76,8 +77,8 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 
 	var responses []interface{}
 	submitTimestamp := time.Now().Unix()
-	saveBidRequest("data/bid.json", bidRequest, submitTimestamp)
 
+	saveBidRequest("data/bid.json", bidRequest, submitTimestamp)
 	for {
 		msg, err := response.Recv()
 		if err == io.EOF {
@@ -95,7 +96,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 
 	// Timer before saving bid responses
 	startTimeBeforeSaveResponses := time.Now()
-	log.Info("End Time", "startTimeBeforeSaveResponses", startTimeBeforeSaveResponses)
+	log.Info("End Time", startTimeBeforeSaveResponses)
 
 	saveBidResponses("data/response.json", responses)
 
