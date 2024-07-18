@@ -85,7 +85,6 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	return signedTx.Hash().Hex(), nil
 }
 
-// ExecuteBlobTransaction executes a blob transaction and returns the transaction hash
 func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numBlobs int) (string, error) {
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
@@ -114,9 +113,21 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 		return "", err
 	}
 
+	// Set a minimum gas tip cap to avoid underpricing errors
+	minGasTipCap := big.NewInt(1000000000) // 1 Gwei
+	if gasTipCap.Cmp(minGasTipCap) < 0 {
+		gasTipCap = minGasTipCap
+	}
+
 	gasFeeCap, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
 		return "", err
+	}
+
+	// Ensure gasFeeCap is at least gasTipCap + some buffer for the base fee
+	buffer := big.NewInt(1000000000) // 1 Gwei buffer
+	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
+		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
 	}
 
 	gasLimit, err := client.EstimateGas(context.Background(),
@@ -139,7 +150,9 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
 
-	log.Info("blob gas info", "excessBlobGas", parentExcessBlobGas, "blobFeeCap", blobFeeCap)
+	log.Info("Blob gas info",
+		"excessBlobGas", parentExcessBlobGas,
+		"blobFeeCap", blobFeeCap)
 
 	blobs := randBlobs(numBlobs)
 	sideCar := makeSidecar(blobs)
@@ -175,21 +188,33 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 	currentTimeMillis := time.Now().UnixNano() / int64(time.Millisecond)
 
 	transactionParameters := map[string]interface{}{
-		"hash":       signedTx.Hash().String(),
-		"chainID":    signedTx.ChainId(),
-		"nonce":      signedTx.Nonce(),
-		"gasTipCap":  signedTx.GasTipCap(),
-		"gasFeeCap":  signedTx.GasFeeCap(),
-		"gasLimit":   signedTx.Gas(),
-		"to":         signedTx.To(),
-		"blobFeeCap": signedTx.BlobGasFeeCap(),
-		"blobHashes": signedTx.BlobHashes(),
+		"hash":          signedTx.Hash().String(),
+		"chainID":       signedTx.ChainId(),
+		"nonce":         signedTx.Nonce(),
+		"gasTipCap":     signedTx.GasTipCap(),
+		"gasFeeCap":     signedTx.GasFeeCap(),
+		"gasLimit":      signedTx.Gas(),
+		"to":            signedTx.To(),
+		"blobFeeCap":    signedTx.BlobGasFeeCap(),
+		"blobHashes":    signedTx.BlobHashes(),
 		"timeSubmitted": currentTimeMillis,
-		"numBlobs" : numBlobs,
+		"numBlobs":      numBlobs,
 	}
 
-	log.Info("transaction parameters", transactionParameters)
-	// save transaction parameters to a JSON file
+	log.Info("Transaction parameters",
+		"hash", signedTx.Hash().String(),
+		"chainID", signedTx.ChainId(),
+		"nonce", signedTx.Nonce(),
+		"gasTipCap", signedTx.GasTipCap(),
+		"gasFeeCap", signedTx.GasFeeCap(),
+		"gasLimit", signedTx.Gas(),
+		"to", signedTx.To(),
+		"blobFeeCap", signedTx.BlobGasFeeCap(),
+		"blobHashes", signedTx.BlobHashes(),
+		"timeSubmitted", currentTimeMillis,
+		"numBlobs", numBlobs)
+
+	// Save transaction parameters to a JSON file
 	saveTransactionParameters("data/blobs.json", transactionParameters)
 
 	return signedTx.Hash().String(), nil
