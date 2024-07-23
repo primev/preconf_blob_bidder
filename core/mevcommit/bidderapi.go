@@ -56,7 +56,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 			return nil, fmt.Errorf("failed to send bid: %w", err)
 		}
 
-		log.Info("Bid sent successfully", "response", msg)
+		log.Info("Bid accepted", "commitment details", msg)
 		responses = append(responses, msg)
 	}
 
@@ -65,7 +65,6 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 	log.Info("End Time", "time", startTimeBeforeSaveResponses)
 
 	saveBidResponses("data/response.json", responses)
-
 	return response, nil
 }
 
