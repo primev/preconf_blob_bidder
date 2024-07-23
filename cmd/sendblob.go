@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"strings"
 	"time"
@@ -73,24 +72,8 @@ func main() {
 	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
 	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
-	response, err := bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
+	_, err = bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
 	if err != nil {
 		log.Fatalf("Failed to send bid: %v", err)
 	}
-
-	for {
-		msg, err := response.Recv()
-		if err == io.EOF {
-			// End of stream
-			break
-		}
-		if err != nil {
-			_ = fmt.Errorf("failed to send bid: %w", err)
-			return
-		}
-
-		// Print the received message properly
-		fmt.Printf("Bid sent successfully: %+v\n", msg)
-	}
-
 }
