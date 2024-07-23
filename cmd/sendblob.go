@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 )
 
 func main() {
-
 	// Start mevcommit bidder node client
 	cfg := bb.BidderConfig{
 		// ServerAddress: "localhost:13524", // Default address for mevcommit gRPC server //
@@ -32,6 +30,8 @@ func main() {
 	// Start Holesky client with command line flags
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
+	private := flag.Bool("private", false, "Set to true for private transactions")
+
 	flag.Parse()
 	if *endpoint == "" {
 		log.Fatal("Endpoint is required. Use the -endpoint flag to provide it.")
@@ -48,6 +48,14 @@ func main() {
 		log.Fatalf("Failed to authenticate private key: %v", err)
 	}
 
+	// Execute Blob Transaction
+	txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, 2)
+	if err != nil {
+		log.Fatalf("Failed to execute blob transaction: %v", err)
+	}
+
+	log.Printf("tx sent: %s", txHash)
+
 	// Get current block number
 	blockNumber, err := client.BlockNumber(context.Background())
 	if err != nil {
@@ -55,42 +63,18 @@ func main() {
 	}
 	fmt.Printf("Current block number: %v\n", blockNumber)
 
-	// Execute Blob Transaction
-	txHash, err := ee.ExecuteBlobTransaction(client, *authAcct, 2)
-	if err != nil {
-		log.Fatalf("Failed to execute blob transaction: %v", err)
-	}
-
-	log.Printf("tx sent: %s", txHash)
-
 	blockNumberInt64 := int64(blockNumber) + 1
 	fmt.Printf("Preconf block number: %v\n", blockNumberInt64)
 	currentTime := time.Now().UnixMilli()
 
 	// Send preconf bid
 	txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-	amount := "10000000000" // Specify amount in wei
+	amount := "1000000000000000" // Specify amount in wei
 	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
 	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
-	response, err := bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
+	_, err = bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
 	if err != nil {
 		log.Fatalf("Failed to send bid: %v", err)
 	}
-
-	for {
-		msg, err := response.Recv()
-		if err == io.EOF {
-			// End of stream
-			break
-		}
-		if err != nil {
-			_ = fmt.Errorf("failed to send bid: %w", err)
-			return
-		}
-
-		// Print the received message properly
-		fmt.Printf("Bid sent successfully: %+v\n", msg)
-	}
-
 }
