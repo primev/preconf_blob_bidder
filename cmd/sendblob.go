@@ -13,7 +13,6 @@ import (
 )
 
 func main() {
-
 	// Start mevcommit bidder node client
 	cfg := bb.BidderConfig{
 		// ServerAddress: "localhost:13524", // Default address for mevcommit gRPC server //
