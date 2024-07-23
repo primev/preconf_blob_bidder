@@ -7,7 +7,9 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -86,7 +89,7 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	return signedTx.Hash().Hex(), nil
 }
 
-func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numBlobs int) (string, error) {
+func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, private bool, authAcct bb.AuthAcct, numBlobs int) (string, error) {
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
 	log.SetDefault(log.NewLogger(glogger))
@@ -174,7 +177,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 		Nonce:      nonce,
 		GasTipCap:  uint256.MustFromBig(gasTipCap),
 		GasFeeCap:  uint256.MustFromBig(gasFeeCap),
-		Gas:        gasLimit * 12 / 10,
+		Gas:        gasLimit * 120 / 10,
 		To:         fromAddress,
 		BlobFeeCap: uint256.MustFromBig(blobFeeCap),
 		BlobHashes: blobHashes,
@@ -191,9 +194,16 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 		return "", err
 	}
 
-	err = client.SendTransaction(ctx, signedTx)
-	if err != nil {
-		return "", err
+	if private {
+		err = sendPrivateRawTransaction(rpcEndpoint, signedTx)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		err = client.SendTransaction(ctx, signedTx)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	currentTimeMillis := time.Now().UnixNano() / int64(time.Millisecond)
@@ -252,6 +262,54 @@ func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big
 	}
 
 	return gasTipCap, gasFeeCap, nil
+}
+
+func sendPrivateRawTransaction(rpcEndpoint string, signedTx *types.Transaction) error {
+	binary, err := signedTx.MarshalBinary()
+	if err != nil {
+		log.Error("Error marshaling transaction", "error", err)
+		return fmt.Errorf("error marshaling transaction: %v", err)
+	}
+
+	method := "POST"
+	payload := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "eth_sendPrivateRawTransaction",
+		"params": []string{
+			"0x" + common.Bytes2Hex(binary),
+		},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Error("Error marshaling payload", "error", err)
+		return fmt.Errorf("error marshaling payload: %v", err)
+	}
+
+	httpClient := &http.Client{}
+	req, err := http.NewRequest(method, rpcEndpoint, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		log.Error("Error creating request", "error", err)
+		return fmt.Errorf("error creating request: %v", err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Error("Error sending request", "error", err)
+		return fmt.Errorf("error sending request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Error("Error reading response body", "error", err)
+		return fmt.Errorf("error reading response body: %v", err)
+	}
+	log.Info("Response private transaction", "body", string(body))
+
+	return nil
 }
 
 // saveTransactionParameters saves transaction parameters to a JSON file
