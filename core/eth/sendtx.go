@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
@@ -98,55 +99,65 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 	}
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
-	chainID, err := client.NetworkID(context.Background())
+	ctx := context.Background()
+
+	var (
+		chainID                *big.Int
+		nonce                  uint64
+		gasTipCap              *big.Int
+		gasFeeCap              *big.Int
+		parentHeader           *types.Header
+		err1, err2, err3, err4 error
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	go func() {
+		defer wg.Done()
+		chainID, err1 = client.NetworkID(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		nonce, err2 = client.PendingNonceAt(ctx, fromAddress)
+	}()
+
+	go func() {
+		defer wg.Done()
+		gasTipCap, gasFeeCap, err3 = suggestGasTipAndFeeCap(client, ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		parentHeader, err4 = client.HeaderByNumber(ctx, nil)
+	}()
+
+	wg.Wait()
+	if err1 != nil {
+		return "", err1
+	}
+	if err2 != nil {
+		return "", err2
+	}
+	if err3 != nil {
+		return "", err3
+	}
+	if err4 != nil {
+		return "", err4
+	}
+
+	gasLimit, err := client.EstimateGas(ctx, ethereum.CallMsg{
+		From:      fromAddress,
+		To:        &fromAddress,
+		GasFeeCap: gasFeeCap,
+		GasTipCap: gasTipCap,
+		Value:     big.NewInt(0),
+	})
 	if err != nil {
 		return "", err
 	}
 
-	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
-	if err != nil {
-		return "", err
-	}
-
-	gasTipCap, err := client.SuggestGasTipCap(context.Background())
-	if err != nil {
-		return "", err
-	}
-
-	// Set a minimum gas tip cap to avoid underpricing errors
-	minGasTipCap := big.NewInt(1000000000) // 1 Gwei
-	if gasTipCap.Cmp(minGasTipCap) < 0 {
-		gasTipCap = minGasTipCap
-	}
-
-	gasFeeCap, err := client.SuggestGasPrice(context.Background())
-	if err != nil {
-		return "", err
-	}
-
-	// Ensure gasFeeCap is at least gasTipCap + some buffer for the base fee
-	buffer := big.NewInt(1000000000) // 1 Gwei buffer
-	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
-		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
-	}
-
-	gasLimit, err := client.EstimateGas(context.Background(),
-		ethereum.CallMsg{
-			From:      fromAddress,
-			To:        &fromAddress,
-			GasFeeCap: gasFeeCap,
-			GasTipCap: gasTipCap,
-			Value:     big.NewInt(0),
-		})
-	if err != nil {
-		return "", err
-	}
-
-	// Estimate pending block's blobFeeCap.
-	parentHeader, err := client.HeaderByNumber(context.Background(), nil)
-	if err != nil {
-		return "", err
-	}
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
 
@@ -180,7 +191,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 		return "", err
 	}
 
-	err = client.SendTransaction(context.Background(), signedTx)
+	err = client.SendTransaction(ctx, signedTx)
 	if err != nil {
 		return "", err
 	}
@@ -214,10 +225,33 @@ func ExecuteBlobTransaction(client *ethclient.Client, authAcct bb.AuthAcct, numB
 		"timeSubmitted", currentTimeMillis,
 		"numBlobs", numBlobs)
 
-	// Save transaction parameters to a JSON file
-	saveTransactionParameters("data/blobs.json", transactionParameters)
+	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 
 	return signedTx.Hash().String(), nil
+}
+
+func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big.Int, *big.Int, error) {
+	gasTipCap, err := client.SuggestGasTipCap(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	minGasTipCap := big.NewInt(1000000000) // 1 Gwei
+	if gasTipCap.Cmp(minGasTipCap) < 0 {
+		gasTipCap = minGasTipCap
+	}
+
+	gasFeeCap, err := client.SuggestGasPrice(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	buffer := big.NewInt(1000000000) // 1 Gwei buffer
+	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
+		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
+	}
+
+	return gasTipCap, gasFeeCap, nil
 }
 
 // saveTransactionParameters saves transaction parameters to a JSON file
