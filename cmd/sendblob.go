@@ -30,6 +30,8 @@ func main() {
 	// Start Holesky client with command line flags
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
+	private := flag.Bool("private", false, "Set to true for private transactions")
+
 	flag.Parse()
 	if *endpoint == "" {
 		log.Fatal("Endpoint is required. Use the -endpoint flag to provide it.")
@@ -47,8 +49,7 @@ func main() {
 	}
 
 	// Execute Blob Transaction
-	private := true
-	txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, private, *authAcct, 2)
+	txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, 2)
 	if err != nil {
 		log.Fatalf("Failed to execute blob transaction: %v", err)
 	}
