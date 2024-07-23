@@ -17,9 +17,10 @@ func main() {
 
 	// Start mevcommit bidder node client
 	cfg := bb.BidderConfig{
-		ServerAddress: "localhost:13524", // Default address for mevcommit gRPC server
-		LogFmt:        "json",            // Example log format
-		LogLevel:      "info",            // Example log level
+		// ServerAddress: "localhost:13524", // Default address for mevcommit gRPC server //
+		ServerAddress: "127.0.0.1:13524",
+		LogFmt:        "json", // Example log format
+		LogLevel:      "info", // Example log level
 	}
 
 	bidderClient, err := bb.NewBidderClient(cfg)
