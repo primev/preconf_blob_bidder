@@ -46,20 +46,21 @@ func main() {
 		log.Fatalf("Failed to authenticate private key: %v", err)
 	}
 
+	// Execute Blob Transaction
+	private := true
+	txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, private, *authAcct, 2)
+	if err != nil {
+		log.Fatalf("Failed to execute blob transaction: %v", err)
+	}
+
+	log.Printf("tx sent: %s", txHash)
+
 	// Get current block number
 	blockNumber, err := client.BlockNumber(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to retrieve block number: %v", err)
 	}
 	fmt.Printf("Current block number: %v\n", blockNumber)
-
-	// Execute Blob Transaction
-	txHash, err := ee.ExecuteBlobTransaction(client, *authAcct, 2)
-	if err != nil {
-		log.Fatalf("Failed to execute blob transaction: %v", err)
-	}
-
-	log.Printf("tx sent: %s", txHash)
 
 	blockNumberInt64 := int64(blockNumber) + 1
 	fmt.Printf("Preconf block number: %v\n", blockNumberInt64)
