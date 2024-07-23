@@ -62,7 +62,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 
 	// Timer before saving bid responses
 	startTimeBeforeSaveResponses := time.Now()
-	log.Info("End Time", startTimeBeforeSaveResponses)
+	log.Info("End Time", "time", startTimeBeforeSaveResponses)
 
 	saveBidResponses("data/response.json", responses)
 
