@@ -42,39 +42,55 @@ func main() {
 		log.Fatalf("Failed to connect to client: %v", err)
 	}
 
-	// Authenticate address with private key
-	authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
-	if err != nil {
-		log.Fatalf("Failed to authenticate private key: %v", err)
-	}
+	// Create a timer for 1 hour
+	timer := time.NewTimer(2 * time.Hour)
+	blobCount := 0
+	for {
+		select {
+		case <-timer.C:
+			fmt.Println("1 hour has passed. Stopping the loop.")
+			return
+		default:
+			// Authenticate address with private key
+			authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
+			if err != nil {
+				log.Fatalf("Failed to authenticate private key: %v", err)
+			}
 
-	// Execute Blob Transaction
-	txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, 2)
-	if err != nil {
-		log.Fatalf("Failed to execute blob transaction: %v", err)
-	}
+			// Execute Blob Transaction
+			txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, 2)
+			if err != nil {
+				log.Fatalf("Failed to execute blob transaction: %v", err)
+			}
 
-	log.Printf("tx sent: %s", txHash)
+			log.Printf("tx sent: %s", txHash)
 
-	// Get current block number
-	blockNumber, err := client.BlockNumber(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to retrieve block number: %v", err)
-	}
-	fmt.Printf("Current block number: %v\n", blockNumber)
+			// Get current block number
+			blockNumber, err := client.BlockNumber(context.Background())
+			if err != nil {
+				log.Fatalf("Failed to retrieve block number: %v", err)
+			}
+			fmt.Printf("Current block number: %v\n", blockNumber)
 
-	blockNumberInt64 := int64(blockNumber) + 1
-	fmt.Printf("Preconf block number: %v\n", blockNumberInt64)
-	currentTime := time.Now().UnixMilli()
+			blockNumberInt64 := int64(blockNumber) + 1
+			fmt.Printf("Preconf block number: %v\n", blockNumberInt64)
+			currentTime := time.Now().UnixMilli()
 
-	// Send preconf bid
-	txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-	amount := "1000000000000000" // Specify amount in wei
-	decayStart := currentTime - (time.Duration(8 * time.Second).Milliseconds())
-	decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
+			// Send preconf bid
+			txHashes := []string{strings.TrimPrefix(txHash, "0x")}
+			amount := "025000000000000000" // amount is in wei. Equivalent to .025 ETH bids
+			decayStart := currentTime      //- (time.Duration(1 * time.Millisecond).Milliseconds())
+			decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
-	_, err = bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
-	if err != nil {
-		log.Fatalf("Failed to send bid: %v", err)
+			_, err = bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
+			if err != nil {
+				log.Fatalf("Failed to send bid: %v", err)
+			}
+			blobCount++
+			log.Printf("Number of blobs sent: %d", blobCount)
+
+			// Wait for 48 seconds before sending the next transaction
+			time.Sleep(48 * time.Second)
+		}
 	}
 }
