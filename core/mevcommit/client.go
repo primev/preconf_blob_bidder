@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
+	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
 	"google.golang.org/grpc"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -35,7 +35,7 @@ type GethConfig struct {
 	Endpoint string `json:"endpoint" yaml:"endpoint"`
 }
 
-// AuthAcct holds the private key, public key, address, and authentication for a given private key. 
+// AuthAcct holds the private key, public key, address, and authentication for a given private key.
 type AuthAcct struct {
 	PrivateKey *ecdsa.PrivateKey
 	PublicKey  *ecdsa.PublicKey
