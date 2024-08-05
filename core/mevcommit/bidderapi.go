@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	pb "github.com/primev/mev-commit/p2p/gen/go/bidderapi/v1"
+	pb "github.com/primev/private-bidder/bidderpb"
 )
 
 func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
