@@ -26,7 +26,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 		DecayEndTimestamp:   decayEnd,
 	}
 
-	log.Info("Sending bid request", "txHashes", txHashes, "amount", amount, "blockNumber", blockNumber, "decayStart", decayStart, "decayEnd", decayEnd)
+	// log.Info("Sending bid request", "txHashes", txHashes, "amount", amount, "blockNumber", blockNumber, "decayStart", decayStart, "decayEnd", decayEnd)
 
 	ctx := context.Background()
 

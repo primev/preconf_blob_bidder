@@ -164,15 +164,15 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
 
-	log.Info("Blob gas info",
-		"excessBlobGas", parentExcessBlobGas,
-		"blobFeeCap", blobFeeCap)
+	// log.Info("Blob gas info",
+	// 	"excessBlobGas", parentExcessBlobGas,
+	// 	"blobFeeCap", blobFeeCap)
 
 	blobs := randBlobs(numBlobs)
 	sideCar := makeSidecar(blobs)
 	blobHashes := sideCar.BlobHashes()
 
-	fixed_priority_fee := big.NewInt(600000000) // 0.6 gwei
+	fixed_priority_fee := big.NewInt(1000000) // 0.001 gwei
 	tx := types.NewTx(&types.BlobTx{
 		ChainID:   uint256.MustFromBig(chainID),
 		Nonce:     nonce,
@@ -224,18 +224,18 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		"numBlobs":      numBlobs,
 	}
 
-	log.Info("Transaction parameters",
-		"hash", signedTx.Hash().String(),
-		"chainID", signedTx.ChainId(),
-		"nonce", signedTx.Nonce(),
-		"gasTipCap", signedTx.GasTipCap(),
-		"gasFeeCap", signedTx.GasFeeCap(),
-		"gasLimit", signedTx.Gas(),
-		"to", signedTx.To(),
-		"blobFeeCap", signedTx.BlobGasFeeCap(),
-		"blobHashes", signedTx.BlobHashes(),
-		"timeSubmitted", currentTimeMillis,
-		"numBlobs", numBlobs)
+	// log.Info("Transaction parameters",
+	// 	"hash", signedTx.Hash().String(),
+	// 	"chainID", signedTx.ChainId(),
+	// 	"nonce", signedTx.Nonce(),
+	// 	"gasTipCap", signedTx.GasTipCap(),
+	// 	"gasFeeCap", signedTx.GasFeeCap(),
+	// 	"gasLimit", signedTx.Gas(),
+	// 	"to", signedTx.To(),
+	// 	"blobFeeCap", signedTx.BlobGasFeeCap(),
+	// 	"blobHashes", signedTx.BlobHashes(),
+	// 	"timeSubmitted", currentTimeMillis,
+	// 	"numBlobs", numBlobs)
 
 	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 
