@@ -78,8 +78,8 @@ func main() {
 
 			// Send preconf bid
 			txHashes := []string{strings.TrimPrefix(txHash, "0x")}
-			amount := "025000000000000000" // amount is in wei. Equivalent to .025 ETH bids
-			decayStart := currentTime      //- (time.Duration(1 * time.Millisecond).Milliseconds())
+			amount := "25000000000000000" // amount is in wei. Equivalent to .025 ETH bids
+			decayStart := currentTime     //- (time.Duration(1 * time.Millisecond).Milliseconds())
 			decayEnd := currentTime + (time.Duration(8 * time.Second).Milliseconds())
 
 			_, err = bidderClient.SendBid(txHashes, amount, blockNumberInt64, decayStart, decayEnd)
@@ -89,8 +89,8 @@ func main() {
 			blobCount++
 			log.Printf("Number of blobs sent: %d", blobCount)
 
-			// Wait for 48 seconds before sending the next transaction
-			time.Sleep(48 * time.Second)
+			// Wait for 45 seconds before sending the next transaction
+			time.Sleep(45 * time.Second)
 		}
 	}
 }
