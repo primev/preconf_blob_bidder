@@ -44,7 +44,7 @@ func main() {
 		log.Fatalf("Failed to connect to client: %v", err)
 	}
 
-	timer := time.NewTimer(2 * time.Hour)
+	timer := time.NewTimer(12 * time.Hour)
 	blobCount := 0
 	pendingTxs := make(map[string]int64)
 	preconfCount := make(map[string]int)
@@ -55,36 +55,37 @@ func main() {
 			fmt.Println("2 hours have passed. Stopping the loop.")
 			return
 		default:
-			authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
-			if err != nil {
-				log.Fatalf("Failed to authenticate private key: %v", err)
+			if len(pendingTxs) == 0 {
+				authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
+				if err != nil {
+					log.Fatalf("Failed to authenticate private key: %v", err)
+				}
+
+				txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, NUM_BLOBS)
+				if err != nil {
+					log.Fatalf("Failed to execute blob transaction: %v", err)
+				}
+
+				blockNumber, err := client.BlockNumber(context.Background())
+				if err != nil {
+					log.Fatalf("Failed to retrieve block number: %v", err)
+				}
+
+				// log.Printf("Sent tx %s at block number: %d", txHash, blockNumber)
+
+				pendingTxs[txHash] = int64(blockNumber)
+				preconfCount[txHash] = 1
+				blobCount++
+				log.Printf("Number of blobs sent: %d", blobCount)
+
+				// Send initial preconfirmation bid
+				sendPreconfBid(bidderClient, txHash, int64(blockNumber)+1)
+			} else {
+				// Check pending transactions and resend preconfirmation bids if necessary
+				checkPendingTxs(client, bidderClient, pendingTxs, preconfCount)
 			}
 
-			txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, NUM_BLOBS)
-			if err != nil {
-				log.Fatalf("Failed to execute blob transaction: %v", err)
-			}
-
-			log.Printf("tx sent: %s", txHash)
-
-			blockNumber, err := client.BlockNumber(context.Background())
-			if err != nil {
-				log.Fatalf("Failed to retrieve block number: %v", err)
-			}
-			fmt.Printf("Current block number: %v\n", blockNumber)
-
-			pendingTxs[txHash] = int64(blockNumber)
-			preconfCount[txHash] = 1
-			blobCount++
-			log.Printf("Number of blobs sent: %d", blobCount)
-
-			// Send initial preconfirmation bid
-			sendPreconfBid(bidderClient, txHash, int64(blockNumber)+1)
-
-			// Check pending transactions and resend preconfirmation bids if necessary
-			checkPendingTxs(client, bidderClient, pendingTxs, preconfCount)
-
-			time.Sleep(13 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
 	}
 }
@@ -93,7 +94,7 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	currentTime := time.Now().UnixMilli()
 	amount := "250000000000000" // amount is in wei. Equivalent to .00025 ETH bids
 	decayStart := currentTime
-	decayEnd := currentTime + (time.Duration(24 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
+	decayEnd := currentTime + (time.Duration(12 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
 
 	_, err := bidderClient.SendBid([]string{strings.TrimPrefix(txHash, "0x")}, amount, blockNumber, decayStart, decayEnd)
 	if err != nil {
