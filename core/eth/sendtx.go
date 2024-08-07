@@ -172,10 +172,12 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	sideCar := makeSidecar(blobs)
 	blobHashes := sideCar.BlobHashes()
 
+	fixed_priority_fee := big.NewInt(600000000) // 0.6 gwei
 	tx := types.NewTx(&types.BlobTx{
-		ChainID:    uint256.MustFromBig(chainID),
-		Nonce:      nonce,
-		GasTipCap:  uint256.MustFromBig(gasTipCap),
+		ChainID:   uint256.MustFromBig(chainID),
+		Nonce:     nonce,
+		GasTipCap: uint256.MustFromBig(fixed_priority_fee),
+		// GasTipCap:  uint256.MustFromBig(gasTipCap), // disable for now to make a different priority fee
 		GasFeeCap:  uint256.MustFromBig(gasFeeCap),
 		Gas:        gasLimit * 120 / 10,
 		To:         fromAddress,
