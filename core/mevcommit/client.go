@@ -1,10 +1,10 @@
 package mevcommit
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"fmt"
 	"log"
+	"math/big"
 
 	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
 	"google.golang.org/grpc"
@@ -55,7 +55,7 @@ func NewBidderClient(cfg BidderConfig) (*Bidder, error) {
 	return &Bidder{client: client}, nil
 }
 
-// NewGethClient connects to the MEV-Commit chain given an endpoint.
+// NewGethClient connects to an EVM compatible chain given an endpoint.
 func NewGethClient(endpoint string) (*ethclient.Client, error) {
 	client, err := rpc.Dial(endpoint)
 	if err != nil {
@@ -64,6 +64,7 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 	}
 
 	ec := ethclient.NewClient(client)
+	fmt.Println(("geth client connected"))
 	return ec, nil
 }
 
@@ -87,10 +88,12 @@ func AuthenticateAddress(privateKeyHex string, client *ethclient.Client) (*AuthA
 
 	address := crypto.PubkeyToAddress(*publicKeyECDSA)
 
-	chainID, err := client.NetworkID(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to get chain ID: %v", err)
-	}
+	// chainID, err := client.NetworkID(context.Background())
+	// if err != nil {
+	// 	log.Fatalf("Failed to get chain ID: %v", err)
+	// }
+
+	chainID := big.NewInt(17000) // Holesky
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
@@ -101,7 +104,6 @@ func AuthenticateAddress(privateKeyHex string, client *ethclient.Client) (*AuthA
 		PrivateKey: privateKey,
 		PublicKey:  publicKeyECDSA,
 		Address:    address,
-		// Nonce:      nonce,
-		Auth: auth,
+		Auth:       auth,
 	}, nil
 }

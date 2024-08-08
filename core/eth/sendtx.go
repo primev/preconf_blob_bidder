@@ -30,7 +30,7 @@ import (
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-// send an eth transfer to self
+// send an eth transfer to self. Only works with public RPC, doesn't work with titan custom endpoint.
 func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.Int, gasLimit uint64, data []byte) (string, error) {
 	// Get Address nonce
 	nonce, err := client.PendingNonceAt(context.Background(), authAcct.Address)
@@ -51,11 +51,12 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	// Calculate max fee per gas as twice the max priority fee
 	maxFeePerGas := new(big.Int).Mul(maxPriorityFee, big.NewInt(2))
 
-	// Get chainID
+	// Get chainID. This is disabled when using titan RPC to send values
 	chainID, err := client.NetworkID(context.Background())
 	if err != nil {
 		return "", err
 	}
+	// chainID := big.NewInt(17000) // Holesky
 
 	// Create EIP-1559 transaction
 	tx := types.NewTx(&types.DynamicFeeTx{
@@ -89,6 +90,7 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	return signedTx.Hash().Hex(), nil
 }
 
+// sends a signed blob transaction to the network. Also sends to Titan endpoint on Holesky internally. 
 func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, private bool, authAcct bb.AuthAcct, numBlobs int) (string, error) {
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
@@ -113,9 +115,15 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		err1, err2, err3, err4 error
 	)
 
+	// connect internally to titan holesky client on the side.
+	titan_client, err := bb.NewGethClient("http://holesky-rpc.titanbuilder.xyz/")
+	if err != nil {
+		fmt.Println("Failed to connect to titan client: ", err)
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(4)
-
+	// chainID = big.NewInt(17000) // Holesky
 	go func() {
 		defer wg.Done()
 		chainID, err1 = client.NetworkID(ctx)
@@ -164,10 +172,6 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
 
-	// log.Info("Blob gas info",
-	// 	"excessBlobGas", parentExcessBlobGas,
-	// 	"blobFeeCap", blobFeeCap)
-
 	blobs := randBlobs(numBlobs)
 	sideCar := makeSidecar(blobs)
 	blobHashes := sideCar.BlobHashes()
@@ -202,7 +206,13 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 			return "", err
 		}
 	} else {
+		// send transaction by the endpoint argument + titan rpc
 		err = client.SendTransaction(ctx, signedTx)
+		if err != nil {
+			return "", err
+		}
+
+		err = titan_client.SendTransaction(ctx, signedTx)
 		if err != nil {
 			return "", err
 		}
@@ -223,19 +233,6 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		"timeSubmitted": currentTimeMillis,
 		"numBlobs":      numBlobs,
 	}
-
-	// log.Info("Transaction parameters",
-	// 	"hash", signedTx.Hash().String(),
-	// 	"chainID", signedTx.ChainId(),
-	// 	"nonce", signedTx.Nonce(),
-	// 	"gasTipCap", signedTx.GasTipCap(),
-	// 	"gasFeeCap", signedTx.GasFeeCap(),
-	// 	"gasLimit", signedTx.Gas(),
-	// 	"to", signedTx.To(),
-	// 	"blobFeeCap", signedTx.BlobGasFeeCap(),
-	// 	"blobHashes", signedTx.BlobHashes(),
-	// 	"timeSubmitted", currentTimeMillis,
-	// 	"numBlobs", numBlobs)
 
 	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 

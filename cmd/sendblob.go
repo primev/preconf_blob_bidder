@@ -41,7 +41,7 @@ func main() {
 
 	client, err := bb.NewGethClient(*endpoint)
 	if err != nil {
-		log.Fatalf("Failed to connect to client: %v", err)
+		log.Fatalf("Failed to connect to geth client: %v", err)
 	}
 
 	timer := time.NewTimer(12 * time.Hour)
