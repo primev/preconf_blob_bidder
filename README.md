@@ -12,6 +12,8 @@ This repository provides an example workflow that attaches preconfirmations to b
 cd preconf_blob_bidder
 ```
 
+Then `go mod tiny` to install dependencies.
+
 ## Making a preconf bid
 1. Ensure the mev-commit bidder node is starting in the background. See [here](https://docs.primev.xyz/get-started/quickstart) for a quickstart. This is the following command to use: 
 `curl -L -o launchmevcommit launch.mev-commit.xyz; chmod +x launchmevcommit; ./launchmevcommit --node-type bidder`

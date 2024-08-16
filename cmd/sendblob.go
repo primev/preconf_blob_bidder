@@ -44,7 +44,7 @@ func main() {
 		log.Fatalf("Failed to connect to geth client: %v", err)
 	}
 
-	timer := time.NewTimer(12 * time.Hour)
+	timer := time.NewTimer(24 * 14 * time.Hour)
 	blobCount := 0
 	pendingTxs := make(map[string]int64)
 	preconfCount := make(map[string]int)
