@@ -15,7 +15,8 @@ import (
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-var NUM_BLOBS = 4
+var NUM_BLOBS = 6
+var PRECONF_SUBMISSION_FREQUENCY = 10
 
 func main() {
 	cfg := bb.BidderConfig{
@@ -84,8 +85,8 @@ func main() {
 				// Check pending transactions and resend preconfirmation bids if necessary
 				checkPendingTxs(client, bidderClient, pendingTxs, preconfCount)
 			}
-
-			time.Sleep(6 * time.Second)
+			// frequency of Preconf submission
+			time.Sleep(time.Duration(PRECONF_SUBMISSION_FREQUENCY) * time.Second)
 		}
 	}
 }
@@ -94,7 +95,7 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	currentTime := time.Now().UnixMilli()
 	amount := "250000000000000" // amount is in wei. Equivalent to .00025 ETH bids
 	decayStart := currentTime
-	decayEnd := currentTime + (time.Duration(12 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
+	decayEnd := currentTime + (time.Duration(24 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
 
 	_, err := bidderClient.SendBid([]string{strings.TrimPrefix(txHash, "0x")}, amount, blockNumber, decayStart, decayEnd)
 	if err != nil {
