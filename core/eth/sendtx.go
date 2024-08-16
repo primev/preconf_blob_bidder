@@ -205,7 +205,6 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	if err != nil {
 		return "", err
 	}
-
 	// Calculate the blob fee cap and ensure it is sufficient for transaction replacement
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
@@ -220,17 +219,14 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	incrementFactor := big.NewInt(200) // 100% increase (double the fee cap)
 	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
 
-	fixed_priority_fee := big.NewInt(500000000) // .5 gwei
-	gasTipCapAdjusted := new(big.Int).Mul(fixed_priority_fee, big.NewInt(5))
-	gasTipCapAdjusted.Add(gasTipCapAdjusted, big.NewInt(10000000000))
+	// Fixed priority fee and adjusted gas tip cap
+	fixed_priority_fee := big.NewInt(250000000)                              // .25 gwei
+	gasTipCapAdjusted := new(big.Int).Mul(fixed_priority_fee, big.NewInt(2)) // Double it to 0.5 gwei
 
-	// Calculate the replacement penalty for GasTipCap
-	queuedGasTipCap := big.NewInt(100000000000) // Example value; replace with actual queued transaction's gas tip cap
-	replacementTipPenalty := big.NewInt(2)      // 100% penalty (double the tip)
-
-	newGasTipCap := new(big.Int).Mul(queuedGasTipCap, replacementTipPenalty)
-	if gasTipCapAdjusted.Cmp(newGasTipCap) <= 0 {
-		gasTipCapAdjusted.Set(newGasTipCap) // Ensure the new tip cap meets the replacement requirement
+	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (0.5 gwei)
+	maxPriorityFee := new(big.Int).Mul(fixed_priority_fee, big.NewInt(2)) // 0.5 gwei
+	if gasTipCapAdjusted.Cmp(maxPriorityFee) > 0 {
+		gasTipCapAdjusted.Set(maxPriorityFee)
 	}
 
 	// Ensure GasFeeCap is higher than GasTipCap
