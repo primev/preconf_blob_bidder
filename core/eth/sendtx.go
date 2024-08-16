@@ -220,7 +220,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	incrementFactor := big.NewInt(200) // 100% increase (double the fee cap)
 	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
 
-	fixed_priority_fee := big.NewInt(2000000000) // 2 gwei
+	fixed_priority_fee := big.NewInt(500000000) // .5 gwei
 	gasTipCapAdjusted := new(big.Int).Mul(fixed_priority_fee, big.NewInt(5))
 	gasTipCapAdjusted.Add(gasTipCapAdjusted, big.NewInt(10000000000))
 
