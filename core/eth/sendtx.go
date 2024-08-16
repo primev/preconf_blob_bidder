@@ -1,3 +1,7 @@
+// Package eth provides functionality for sending Ethereum transactions,
+// including blob transactions with preconfirmation bids. This package
+// is designed to work with public Ethereum nodes and a custom Titan
+// endpoint for private transactions.
 package eth
 
 import (
@@ -30,35 +34,45 @@ import (
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-// send an eth transfer to self. Only works with public RPC, doesn't work with titan custom endpoint.
+// SelfETHTransfer sends an ETH transfer to the sender's own address. This function only works with
+// public RPC endpoints and does not work with custom Titan endpoints.
+//
+// Parameters:
+// - client: The Ethereum client instance.
+// - authAcct: The authenticated account struct containing the address and private key.
+// - value: The amount of ETH to transfer (in wei).
+// - gasLimit: The maximum amount of gas to use for the transaction.
+// - data: Optional data to include with the transaction.
+//
+// Returns:
+// - The transaction hash as a string, or an error if the transaction fails.
 func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.Int, gasLimit uint64, data []byte) (string, error) {
-	// Get Address nonce
+	// Get the account's nonce
 	nonce, err := client.PendingNonceAt(context.Background(), authAcct.Address)
 	if err != nil {
 		return "", err
 	}
 
-	// Get base fee per gas
+	// Get the current base fee per gas from the latest block header
 	header, err := client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		return "", err
 	}
 	baseFee := header.BaseFee
 
-	// Set max priority fee per gas as twice the base fee
-	maxPriorityFee := new(big.Int).Mul(baseFee, big.NewInt(2))
+	// Set the max priority fee per gas to be 10 times the base fee
+	maxPriorityFee := new(big.Int).Mul(baseFee, big.NewInt(10))
 
-	// Calculate max fee per gas as twice the max priority fee
-	maxFeePerGas := new(big.Int).Mul(maxPriorityFee, big.NewInt(2))
+	// Set the max fee per gas to be 10 times the max priority fee
+	maxFeePerGas := new(big.Int).Mul(maxPriorityFee, big.NewInt(10))
 
-	// Get chainID. This is disabled when using titan RPC to send values
+	// Get the chain ID (this does not work with the Titan RPC)
 	chainID, err := client.NetworkID(context.Background())
 	if err != nil {
 		return "", err
 	}
-	// chainID := big.NewInt(17000) // Holesky
 
-	// Create EIP-1559 transaction
+	// Create a new EIP-1559 transaction
 	tx := types.NewTx(&types.DynamicFeeTx{
 		Nonce:     nonce,
 		To:        &authAcct.Address,
@@ -69,19 +83,21 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 		Data:      data,
 	})
 
+	// Sign the transaction with the authenticated account's private key
 	signer := types.LatestSignerForChainID(chainID)
 	signedTx, err := types.SignTx(tx, signer, authAcct.PrivateKey)
 	if err != nil {
 		return "", err
 	}
 
-	// Encode the signed transaction into RLP (Recursive Length Prefix) format for transmission.
+	// Encode the signed transaction into RLP format for transmission
 	var buf bytes.Buffer
 	err = signedTx.EncodeRLP(&buf)
 	if err != nil {
 		return "", err
 	}
 
+	// Send the signed transaction to the Ethereum network
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
 		return "", err
@@ -90,8 +106,20 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	return signedTx.Hash().Hex(), nil
 }
 
-// sends a signed blob transaction to the network. Also sends to Titan endpoint on Holesky internally. 
+// ExecuteBlobTransaction sends a signed blob transaction to the network. If the private flag is set to true,
+// the transaction is sent only to the Titan endpoint. Otherwise, it is sent to the specified public RPC endpoint.
+//
+// Parameters:
+// - client: The Ethereum client instance.
+// - rpcEndpoint: The RPC endpoint URL to send the transaction to.
+// - private: A flag indicating whether to send the transaction to the Titan endpoint only.
+// - authAcct: The authenticated account struct containing the address and private key.
+// - numBlobs: The number of blobs to include in the transaction.
+//
+// Returns:
+// - The transaction hash as a string, or an error if the transaction fails.
 func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, private bool, authAcct bb.AuthAcct, numBlobs int) (string, error) {
+	// Initialize logger
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
 	log.SetDefault(log.NewLogger(glogger))
@@ -115,15 +143,23 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		err1, err2, err3, err4 error
 	)
 
-	// connect internally to titan holesky client on the side.
+	// Connect to the Titan Holesky client
 	titan_client, err := bb.NewGethClient("http://holesky-rpc.titanbuilder.xyz/")
 	if err != nil {
 		fmt.Println("Failed to connect to titan client: ", err)
 	}
 
+	// Fetch the latest block number
+	var blockNumber uint64
+	blockNumber, err = client.BlockNumber(ctx)
+	if err != nil {
+		return "cant fetch latest block number", err
+	}
+
+	// Fetch various transaction parameters in parallel
 	var wg sync.WaitGroup
 	wg.Add(4)
-	// chainID = big.NewInt(17000) // Holesky
+
 	go func() {
 		defer wg.Done()
 		chainID, err1 = client.NetworkID(ctx)
@@ -131,7 +167,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 
 	go func() {
 		defer wg.Done()
-		nonce, err2 = client.PendingNonceAt(ctx, fromAddress)
+		nonce, err2 = client.NonceAt(ctx, fromAddress, new(big.Int).SetUint64(blockNumber))
 	}()
 
 	go func() {
@@ -158,6 +194,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		return "", err4
 	}
 
+	// Estimate the gas limit for the transaction
 	gasLimit, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		From:      fromAddress,
 		To:        &fromAddress,
@@ -169,20 +206,45 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		return "", err
 	}
 
+	// Calculate the blob fee cap and ensure it is sufficient for transaction replacement
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
+	blobFeeCap.Add(blobFeeCap, big.NewInt(1)) // Ensure it's at least 1 unit higher to replace a transaction
 
+	// Generate random blobs and their corresponding sidecar
 	blobs := randBlobs(numBlobs)
 	sideCar := makeSidecar(blobs)
 	blobHashes := sideCar.BlobHashes()
 
-	fixed_priority_fee := big.NewInt(1000000) // 0.001 gwei
+	// Increase the blob fee cap to ensure replacement
+	incrementFactor := big.NewInt(200) // 100% increase (double the fee cap)
+	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
+
+	fixed_priority_fee := big.NewInt(2000000000) // 2 gwei
+	gasTipCapAdjusted := new(big.Int).Mul(fixed_priority_fee, big.NewInt(5))
+	gasTipCapAdjusted.Add(gasTipCapAdjusted, big.NewInt(10000000000))
+
+	// Calculate the replacement penalty for GasTipCap
+	queuedGasTipCap := big.NewInt(100000000000) // Example value; replace with actual queued transaction's gas tip cap
+	replacementTipPenalty := big.NewInt(2)      // 100% penalty (double the tip)
+
+	newGasTipCap := new(big.Int).Mul(queuedGasTipCap, replacementTipPenalty)
+	if gasTipCapAdjusted.Cmp(newGasTipCap) <= 0 {
+		gasTipCapAdjusted.Set(newGasTipCap) // Ensure the new tip cap meets the replacement requirement
+	}
+
+	// Ensure GasFeeCap is higher than GasTipCap
+	gasFeeCapAdjusted := new(big.Int).Mul(gasTipCapAdjusted, big.NewInt(2))
+	if gasFeeCap.Cmp(gasFeeCapAdjusted) > 0 {
+		gasFeeCapAdjusted.Set(gasFeeCap) // Use the original gasFeeCap if it's already larger
+	}
+
+	// Create a new BlobTx transaction
 	tx := types.NewTx(&types.BlobTx{
-		ChainID:   uint256.MustFromBig(chainID),
-		Nonce:     nonce,
-		GasTipCap: uint256.MustFromBig(fixed_priority_fee),
-		// GasTipCap:  uint256.MustFromBig(gasTipCap), // disable for now to make a different priority fee
-		GasFeeCap:  uint256.MustFromBig(gasFeeCap),
+		ChainID:    uint256.MustFromBig(chainID),
+		Nonce:      nonce,
+		GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
+		GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
 		Gas:        gasLimit * 120 / 10,
 		To:         fromAddress,
 		BlobFeeCap: uint256.MustFromBig(blobFeeCap),
@@ -190,6 +252,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		Sidecar:    sideCar,
 	})
 
+	// Sign the transaction with the authenticated account's private key
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
 		return "", err
@@ -201,23 +264,20 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	}
 
 	if private {
-		err = sendPrivateRawTransaction(rpcEndpoint, signedTx)
+		// Send the transaction only to the Titan endpoint
+		err = titan_client.SendTransaction(ctx, signedTx)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		// send transaction by the endpoint argument + titan rpc
+		// Send the transaction to the specified public RPC endpoint
 		err = client.SendTransaction(ctx, signedTx)
-		if err != nil {
-			return "", err
-		}
-
-		err = titan_client.SendTransaction(ctx, signedTx)
 		if err != nil {
 			return "", err
 		}
 	}
 
+	// Record the transaction parameters and save them asynchronously
 	currentTimeMillis := time.Now().UnixNano() / int64(time.Millisecond)
 
 	transactionParameters := map[string]interface{}{
@@ -239,13 +299,22 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	return signedTx.Hash().String(), nil
 }
 
+// suggestGasTipAndFeeCap suggests a gas tip cap and gas fee cap for a transaction, ensuring that the values
+// are sufficient for timely inclusion in the next block.
+//
+// Parameters:
+// - client: The Ethereum client instance.
+// - ctx: The context for making requests to the Ethereum client.
+//
+// Returns:
+// - The suggested gas tip cap and gas fee cap as big.Int pointers, or an error if the suggestions fail.
 func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big.Int, *big.Int, error) {
 	gasTipCap, err := client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	minGasTipCap := big.NewInt(1000000000) // 1 Gwei
+	minGasTipCap := big.NewInt(1000000000) // 1 Gwei minimum gas tip cap
 	if gasTipCap.Cmp(minGasTipCap) < 0 {
 		gasTipCap = minGasTipCap
 	}
@@ -255,7 +324,7 @@ func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big
 		return nil, nil, err
 	}
 
-	buffer := big.NewInt(1000000000) // 1 Gwei buffer
+	buffer := big.NewInt(1000000000) // 1 Gwei buffer to ensure gas fee cap is higher than gas tip cap
 	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
 		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
 	}
@@ -263,13 +332,23 @@ func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big
 	return gasTipCap, gasFeeCap, nil
 }
 
+// sendPrivateRawTransaction sends a signed transaction directly to the Titan endpoint as a private transaction.
+//
+// Parameters:
+// - rpcEndpoint: The RPC endpoint URL to send the transaction to.
+// - signedTx: The signed transaction to be sent.
+//
+// Returns:
+// - An error if the transaction fails to send.
 func sendPrivateRawTransaction(rpcEndpoint string, signedTx *types.Transaction) error {
+	// Marshal the signed transaction to binary format
 	binary, err := signedTx.MarshalBinary()
 	if err != nil {
 		log.Error("Error marshaling transaction", "error", err)
 		return fmt.Errorf("error marshaling transaction: %v", err)
 	}
 
+	// Prepare the JSON-RPC payload
 	method := "POST"
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -286,6 +365,7 @@ func sendPrivateRawTransaction(rpcEndpoint string, signedTx *types.Transaction) 
 		return fmt.Errorf("error marshaling payload: %v", err)
 	}
 
+	// Send the HTTP request to the Titan endpoint
 	httpClient := &http.Client{}
 	req, err := http.NewRequest(method, rpcEndpoint, bytes.NewBuffer(payloadBytes))
 	if err != nil {
@@ -301,6 +381,7 @@ func sendPrivateRawTransaction(rpcEndpoint string, signedTx *types.Transaction) 
 	}
 	defer resp.Body.Close()
 
+	// Read and log the response from the Titan endpoint
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Error("Error reading response body", "error", err)
@@ -311,7 +392,11 @@ func sendPrivateRawTransaction(rpcEndpoint string, signedTx *types.Transaction) 
 	return nil
 }
 
-// saveTransactionParameters saves transaction parameters to a JSON file
+// saveTransactionParameters saves transaction parameters to a JSON file, appending them to an existing array of transactions.
+//
+// Parameters:
+// - filename: The name of the JSON file to save the transaction parameters to.
+// - params: The transaction parameters to save as a map of string keys to interface{} values.
 func saveTransactionParameters(filename string, params map[string]interface{}) {
 	// Ensure the directory exists
 	dir := filepath.Dir(filename)
@@ -322,7 +407,7 @@ func saveTransactionParameters(filename string, params map[string]interface{}) {
 
 	var transactions []map[string]interface{}
 
-	// Read existing file content
+	// Open the file and decode any existing transactions
 	file, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Error("Failed to open file", "filename", filename, "error", err)
@@ -349,12 +434,20 @@ func saveTransactionParameters(filename string, params map[string]interface{}) {
 	}
 }
 
+// makeSidecar creates a sidecar for the given blobs, including commitments and proofs.
+//
+// Parameters:
+// - blobs: A slice of kzg4844.Blob objects.
+//
+// Returns:
+// - A pointer to a types.BlobTxSidecar containing the blobs, commitments, and proofs.
 func makeSidecar(blobs []kzg4844.Blob) *types.BlobTxSidecar {
 	var (
 		commitments []kzg4844.Commitment
 		proofs      []kzg4844.Proof
 	)
 
+	// Generate commitments and proofs for each blob
 	for _, blob := range blobs {
 		c, _ := kzg4844.BlobToCommitment(&blob)
 		p, _ := kzg4844.ComputeBlobProof(&blob, c)
@@ -370,6 +463,13 @@ func makeSidecar(blobs []kzg4844.Blob) *types.BlobTxSidecar {
 	}
 }
 
+// randBlobs generates a slice of random blobs.
+//
+// Parameters:
+// - n: The number of blobs to generate.
+//
+// Returns:
+// - A slice of randomly generated blobs.
 func randBlobs(n int) []kzg4844.Blob {
 	blobs := make([]kzg4844.Blob, n)
 	for i := 0; i < n; i++ {
@@ -378,6 +478,10 @@ func randBlobs(n int) []kzg4844.Blob {
 	return blobs
 }
 
+// randBlob generates a single random blob.
+//
+// Returns:
+// - A randomly generated blob.
 func randBlob() kzg4844.Blob {
 	var blob kzg4844.Blob
 	for i := 0; i < len(blob); i += gokzg4844.SerializedScalarSize {
@@ -387,6 +491,10 @@ func randBlob() kzg4844.Blob {
 	return blob
 }
 
+// randFieldElement generates a random field element for use in blob generation.
+//
+// Returns:
+// - A 32-byte array representing a random field element.
 func randFieldElement() [32]byte {
 	bytes := make([]byte, 32)
 	_, err := rand.Read(bytes)
