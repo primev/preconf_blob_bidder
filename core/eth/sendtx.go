@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -205,6 +206,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	if err != nil {
 		return "", err
 	}
+
 	// Calculate the blob fee cap and ensure it is sufficient for transaction replacement
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
 	blobFeeCap := eip4844.CalcBlobFee(parentExcessBlobGas)
@@ -215,24 +217,24 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	sideCar := makeSidecar(blobs)
 	blobHashes := sideCar.BlobHashes()
 
-	// Increase the blob fee cap to ensure replacement
-	incrementFactor := big.NewInt(200) // 100% increase (double the fee cap)
+	// Incrementally increase blob fee cap for replacement
+	incrementFactor := big.NewInt(110) // 10% increase
 	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
 
-	// Fixed priority fee and adjusted gas tip cap
-	fixed_priority_fee := big.NewInt(250000000)                              // .25 gwei
-	gasTipCapAdjusted := new(big.Int).Mul(fixed_priority_fee, big.NewInt(2)) // Double it to 0.5 gwei
+	// Adjust gas tip cap and fee cap incrementally
+	priorityFeeIncrement := big.NewInt(10000000) // 0.01 gwei increase
+	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
 	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (0.5 gwei)
-	maxPriorityFee := new(big.Int).Mul(fixed_priority_fee, big.NewInt(2)) // 0.5 gwei
+	maxPriorityFee := new(big.Int).Mul(priorityFeeIncrement, big.NewInt(50)) // 0.5 gwei
 	if gasTipCapAdjusted.Cmp(maxPriorityFee) > 0 {
 		gasTipCapAdjusted.Set(maxPriorityFee)
 	}
 
 	// Ensure GasFeeCap is higher than GasTipCap
 	gasFeeCapAdjusted := new(big.Int).Mul(gasTipCapAdjusted, big.NewInt(2))
-	if gasFeeCap.Cmp(gasFeeCapAdjusted) > 0 {
-		gasFeeCapAdjusted.Set(gasFeeCap) // Use the original gasFeeCap if it's already larger
+	if gasFeeCap.Cmp(gasFeeCapAdjusted) <= 0 {
+		gasFeeCapAdjusted.Add(gasFeeCapAdjusted, big.NewInt(1)) // Ensure it's higher
 	}
 
 	// Create a new BlobTx transaction
@@ -259,18 +261,44 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		return "", err
 	}
 
-	if private {
-		// Send the transaction only to the Titan endpoint
-		err = titan_client.SendTransaction(ctx, signedTx)
-		if err != nil {
-			return "", err
+	retryAttempts := 5
+	for i := 0; i < retryAttempts; i++ {
+		if private {
+			// Send the transaction only to the Titan endpoint
+			err = titan_client.SendTransaction(ctx, signedTx)
+		} else {
+			// Send the transaction to the specified public RPC endpoint
+			err = client.SendTransaction(ctx, signedTx)
 		}
-	} else {
-		// Send the transaction to the specified public RPC endpoint
-		err = client.SendTransaction(ctx, signedTx)
-		if err != nil {
-			return "", err
+
+		if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
+			// Increment gas fee cap slightly and try again
+			incrementFactor := big.NewInt(105) // 105% increase
+			gasFeeCapAdjusted.Mul(gasFeeCapAdjusted, incrementFactor).Div(gasFeeCapAdjusted, big.NewInt(100))
+
+			// Recreate and sign the transaction with updated gasFeeCap
+			tx = types.NewTx(&types.BlobTx{
+				ChainID:    uint256.MustFromBig(chainID),
+				Nonce:      nonce,
+				GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
+				GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
+				Gas:        gasLimit * 120 / 10,
+				To:         fromAddress,
+				BlobFeeCap: uint256.MustFromBig(blobFeeCap),
+				BlobHashes: blobHashes,
+				Sidecar:    sideCar,
+			})
+			signedTx, err = auth.Signer(auth.From, tx)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			break
 		}
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
 	}
 
 	// Record the transaction parameters and save them asynchronously
