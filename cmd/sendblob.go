@@ -17,6 +17,7 @@ import (
 
 var NUM_BLOBS = 6
 var PRECONF_SUBMISSION_FREQUENCY = 10
+var MAX_PRECONF_ATTEMPTS = 50
 
 func main() {
 	cfg := bb.BidderConfig{
@@ -120,6 +121,13 @@ func checkPendingTxs(client *ethclient.Client, bidderClient *bb.Bidder, pendingT
 					sendPreconfBid(bidderClient, txHash, int64(currentBlockNumber)+1)
 					preconfCount[txHash]++
 					log.Printf("Resent preconfirmation bid for tx: %s in block number: %d. Total preconfirmations: %d", txHash, currentBlockNumber, preconfCount[txHash])
+
+					// Check if preconfCount exceeds MAX_PRECONF_ATTEMPTS
+					if preconfCount[txHash] >= MAX_PRECONF_ATTEMPTS {
+						log.Printf("Max preconfirmation attempts reached for tx: %s. Restarting with a new transaction.", txHash)
+						delete(pendingTxs, txHash)
+						delete(preconfCount, txHash)
+					}
 				}
 			} else {
 				log.Printf("Error checking transaction receipt: %v", err)
