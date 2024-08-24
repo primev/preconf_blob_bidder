@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +53,7 @@ func main() {
 	preconfCount := make(map[string]int)
 
 	for {
+		fmt.Println("----------------------------------------------")
 		select {
 		case <-timer.C:
 			fmt.Println("2 hours have passed. Stopping the loop.")
@@ -63,25 +65,20 @@ func main() {
 					log.Fatalf("Failed to authenticate private key: %v", err)
 				}
 
-				txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, NUM_BLOBS)
+				txHash, blockNumber, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, NUM_BLOBS)
 				if err != nil {
 					log.Fatalf("Failed to execute blob transaction: %v", err)
 				}
 
-				blockNumber, err := client.BlockNumber(context.Background())
-				if err != nil {
-					log.Fatalf("Failed to retrieve block number: %v", err)
-				}
-
 				// log.Printf("Sent tx %s at block number: %d", txHash, blockNumber)
 
-				pendingTxs[txHash] = int64(blockNumber)
+				//pendingTxs[txHash] = int64(blockNumber)
 				preconfCount[txHash] = 1
 				blobCount++
 				log.Printf("Number of blobs sent: %d", blobCount)
 
 				// Send initial preconfirmation bid
-				sendPreconfBid(bidderClient, txHash, int64(blockNumber)+1)
+				sendPreconfBid(bidderClient, txHash, int64(blockNumber))
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
 				checkPendingTxs(client, bidderClient, pendingTxs, preconfCount)
@@ -94,7 +91,8 @@ func main() {
 
 func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	currentTime := time.Now().UnixMilli()
-	amount := "250000000000000" // amount is in wei. Equivalent to .00025 ETH bids
+	//amount := "250000000000000"               // amount is in wei. Equivalent to .00025 ETH bids
+	amount := strconv.FormatInt(250000000000000+blockNumber, 10) // amount is in wei. Equivalent to .00025 ETH bids
 	decayStart := currentTime
 	decayEnd := currentTime + (time.Duration(24 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
 
