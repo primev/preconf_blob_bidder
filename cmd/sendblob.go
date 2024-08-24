@@ -85,7 +85,7 @@ func main() {
 		case header := <-headers:
 			log.Info("new block generated", "block-number", header.Number)
 			if len(pendingTxs) == 0 {
-				authAcct, err := bb.AuthenticateAddress(*privateKeyHex, rpcClient)
+				authAcct, err := bb.AuthenticateAddress(*privateKeyHex)
 				if err != nil {
 					log.Crit("Failed to authenticate private key:", "err", err)
 				}
@@ -124,7 +124,7 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	if err != nil {
 		log.Warn("failed to send bid", "err", err)
 	} else {
-		log.Info("sent preconfirmation bid", "tx", txHash, "block number", blockNumber)
+		log.Info("sent preconfirmation bid", "tx", txHash, "block-number", blockNumber)
 	}
 }
 

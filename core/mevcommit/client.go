@@ -83,6 +83,7 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 
 	// Create a new ethclient.Client using the RPC client
 	ec := ethclient.NewClient(client)
+	log.Println("geth client connected")
 	return ec, nil
 }
 
@@ -91,11 +92,10 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 //
 // Parameters:
 // - privateKeyHex: The hex-encoded private key string.
-// - client: The ethclient.Client instance connected to the Ethereum node.
 //
 // Returns:
 // - A pointer to an AuthAcct struct, or an error if authentication fails.
-func AuthenticateAddress(privateKeyHex string, client *ethclient.Client) (*AuthAcct, error) {
+func AuthenticateAddress(privateKeyHex string) (*AuthAcct, error) {
 	if privateKeyHex == "" {
 		return nil, nil
 	}
