@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	ee "github.com/primev/preconf_blob_bidder/core/eth"
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
@@ -29,11 +30,11 @@ func main() {
 
 	flag.Parse()
 	if *rpcEndpoint == "" {
-		log.Fatal("Endpoint is required. Use the rpc-endpoint flag to provide it.")
+		log.Crit("use the rpc-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
 	}
 
 	if *wsEndpoint == "" {
-		log.Fatal("Endpoint is required. Use the ws-endpoint flag to provide it.")
+		log.Crit("use the ws-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
 	}
 
 	cfg := bb.BidderConfig{
@@ -44,28 +45,28 @@ func main() {
 
 	bidderClient, err := bb.NewBidderClient(cfg)
 	if err != nil {
-		log.Fatalf("Failed to create client: %v. Remember to connect to the mev-commit p2p bidder node.", err)
+		log.Crit("failed to create bidder client, remember to connect to the mev-commit p2p bidder node.", "err", err)
 	}
 
-	log.Println("connected to mev-commit client")
+	log.Info("connected to mev-commit client")
 
 	rpcClient, err := bb.NewGethClient(*rpcEndpoint)
 	if err != nil {
-		log.Fatalf("Failed to connect to geth client: %v", err)
+		log.Crit("failed to connect to geth client", "err", err)
 	}
-	log.Println("(rpc) geth client connected")
+	log.Info("(rpc) geth client connected")
 
 	wsClient, err := bb.NewGethClient(*wsEndpoint)
 	if err != nil {
-		log.Fatalf("Failed to connect to geth client: %v", err)
+		log.Crit("failed to connect to geth client", "err", err)
 	}
 
-	log.Println("(ws) geth client connected")
+	log.Info("(ws) geth client connected")
 
 	headers := make(chan *types.Header)
 	sub, err := wsClient.SubscribeNewHead(context.Background(), headers)
 	if err != nil {
-		log.Fatalf("Failed to subscribe to new blocks: %v", err)
+		log.Crit("failed to subscribe to new blocks", "err", err)
 	}
 
 	timer := time.NewTimer(24 * 14 * time.Hour)
@@ -77,21 +78,21 @@ func main() {
 		fmt.Println("----------------------------------------------")
 		select {
 		case <-timer.C:
-			fmt.Println("2 hours have passed. Stopping the loop.")
+			log.Info("2 hours have passed. Stopping the loop.")
 			return
 		case err := <-sub.Err():
-			log.Fatalf("Subscription error: %v", err)
+			log.Crit("subscription error", "err", err)
 		case header := <-headers:
-			log.Printf("new block number: %d\n", header.Number)
+			log.Info("new block generated", "block-number", header.Number)
 			if len(pendingTxs) == 0 {
 				authAcct, err := bb.AuthenticateAddress(*privateKeyHex, rpcClient)
 				if err != nil {
-					log.Fatalf("Failed to authenticate private key: %v", err)
+					log.Crit("Failed to authenticate private key:", "err", err)
 				}
 
 				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, *private, *authAcct, NUM_BLOBS)
 				if err != nil {
-					log.Fatalf("Failed to execute blob transaction: %v", err)
+					log.Warn("failed to execute blob tx", "err", err)
 				}
 
 				// log.Printf("Sent tx %s at block number: %d", txHash, blockNumber)
@@ -99,7 +100,8 @@ func main() {
 				//pendingTxs[txHash] = int64(blockNumber)
 				preconfCount[txHash] = 1
 				blobCount++
-				log.Printf("Number of blobs sent: %d", blobCount)
+				log.Info("number of blobs sent", "count", blobCount)
+				//log.Printf("Number of blobs sent: %d", blobCount)
 
 				// Send initial preconfirmation bid
 				sendPreconfBid(bidderClient, txHash, int64(blockNumber))
@@ -120,9 +122,9 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 
 	_, err := bidderClient.SendBid([]string{strings.TrimPrefix(txHash, "0x")}, amount, blockNumber, decayStart, decayEnd)
 	if err != nil {
-		log.Printf("Failed to send bid: %v", err)
+		log.Warn("failed to send bid", "err", err)
 	} else {
-		log.Printf("Sent preconfirmation bid for tx: %s for block number: %d", txHash, blockNumber)
+		log.Info("sent preconfirmation bid", "tx", txHash, "block number", blockNumber)
 	}
 }
 
@@ -134,28 +136,37 @@ func checkPendingTxs(client *ethclient.Client, bidderClient *bb.Bidder, pendingT
 				// Transaction is still pending, resend preconfirmation bid
 				currentBlockNumber, err := client.BlockNumber(context.Background())
 				if err != nil {
-					log.Printf("Failed to retrieve current block number: %v", err)
+					log.Error("failed to retrieve current block number", "err", err)
 					continue
 				}
 				if currentBlockNumber > uint64(initialBlock) {
 					sendPreconfBid(bidderClient, txHash, int64(currentBlockNumber)+1)
 					preconfCount[txHash]++
-					log.Printf("Resent preconfirmation bid for tx: %s in block number: %d. Total preconfirmations: %d", txHash, currentBlockNumber, preconfCount[txHash])
+
+					log.Info("Resent preconfirmation bid for tx",
+						"txHash", txHash,
+						"block number", currentBlockNumber,
+						"total preconfirmations", preconfCount[txHash])
 
 					// Check if preconfCount exceeds MAX_PRECONF_ATTEMPTS
 					if preconfCount[txHash] >= MAX_PRECONF_ATTEMPTS {
-						log.Printf("Max preconfirmation attempts reached for tx: %s. Restarting with a new transaction.", txHash)
+						log.Warn("Max preconfirmation attempts reached for tx. Restarting with a new transaction.",
+							"txHash", txHash)
 						delete(pendingTxs, txHash)
 						delete(preconfCount, txHash)
 					}
 				}
 			} else {
-				log.Printf("Error checking transaction receipt: %v", err)
+				log.Error("Error checking transaction receipt", "err", err)
 			}
 		} else {
 			// Transaction is confirmed, remove from pendingTxs
 			delete(pendingTxs, txHash)
-			log.Printf("Transaction %s confirmed in block %d, initially sent in block %d. Total preconfirmations: %d", txHash, receipt.BlockNumber.Uint64(), initialBlock, preconfCount[txHash])
+			log.Info("Transaction confirmed",
+				"txHash", txHash,
+				"confirmed block", receipt.BlockNumber.Uint64(),
+				"initially sent block", initialBlock,
+				"total preconfirmations", preconfCount[txHash])
 			delete(preconfCount, txHash)
 		}
 	}
