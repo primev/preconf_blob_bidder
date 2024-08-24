@@ -21,18 +21,6 @@ var NUM_BLOBS = 6
 var MAX_PRECONF_ATTEMPTS = 50
 
 func main() {
-	cfg := bb.BidderConfig{
-		ServerAddress: "127.0.0.1:13524",
-		LogFmt:        "json",
-		LogLevel:      "info",
-	}
-
-	bidderClient, err := bb.NewBidderClient(cfg)
-	if err != nil {
-		log.Fatalf("Failed to create client: %v. Remember to connect to the mev-commit p2p bidder node.", err)
-	}
-	log.Println("Connected to mev-commit client")
-
 	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
 	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client endpoint")
 
@@ -47,6 +35,19 @@ func main() {
 	if *wsEndpoint == "" {
 		log.Fatal("Endpoint is required. Use the ws-endpoint flag to provide it.")
 	}
+
+	cfg := bb.BidderConfig{
+		ServerAddress: "127.0.0.1:13524",
+		LogFmt:        "json",
+		LogLevel:      "info",
+	}
+
+	bidderClient, err := bb.NewBidderClient(cfg)
+	if err != nil {
+		log.Fatalf("Failed to create client: %v. Remember to connect to the mev-commit p2p bidder node.", err)
+	}
+
+	log.Println("connected to mev-commit client")
 
 	rpcClient, err := bb.NewGethClient(*rpcEndpoint)
 	if err != nil {
