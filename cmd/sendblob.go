@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	ee "github.com/primev/preconf_blob_bidder/core/eth"
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
@@ -33,18 +34,35 @@ func main() {
 	}
 	log.Println("Connected to mev-commit client")
 
-	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
+	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
+	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client endpoint")
+
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	private := flag.Bool("private", false, "Set to true for private transactions")
 
 	flag.Parse()
-	if *endpoint == "" {
-		log.Fatal("Endpoint is required. Use the -endpoint flag to provide it.")
+	if *rpcEndpoint == "" {
+		log.Fatal("Endpoint is required. Use the rpc-endpoint flag to provide it.")
 	}
 
-	client, err := bb.NewGethClient(*endpoint)
+	if *wsEndpoint == "" {
+		log.Fatal("Endpoint is required. Use the ws-endpoint flag to provide it.")
+	}
+
+	rpcClient, err := bb.NewGethClient(*rpcEndpoint)
 	if err != nil {
 		log.Fatalf("Failed to connect to geth client: %v", err)
+	}
+
+	wsClient, err := bb.NewGethClient(*wsEndpoint)
+	if err != nil {
+		log.Fatalf("Failed to connect to geth client: %v", err)
+	}
+
+	headers := make(chan *types.Header)
+	sub, err := wsClient.SubscribeNewHead(context.Background(), headers)
+	if err != nil {
+		log.Fatalf("Failed to subscribe to new blocks: %v", err)
 	}
 
 	timer := time.NewTimer(24 * 14 * time.Hour)
@@ -58,14 +76,17 @@ func main() {
 		case <-timer.C:
 			fmt.Println("2 hours have passed. Stopping the loop.")
 			return
-		default:
+		case err := <-sub.Err():
+			log.Fatalf("Subscription error: %v", err)
+		case header := <-headers:
+			log.Printf("new block number: %d\n", header.Number)
 			if len(pendingTxs) == 0 {
-				authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
+				authAcct, err := bb.AuthenticateAddress(*privateKeyHex, rpcClient)
 				if err != nil {
 					log.Fatalf("Failed to authenticate private key: %v", err)
 				}
 
-				txHash, blockNumber, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, NUM_BLOBS)
+				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, *private, *authAcct, NUM_BLOBS)
 				if err != nil {
 					log.Fatalf("Failed to execute blob transaction: %v", err)
 				}
@@ -81,7 +102,7 @@ func main() {
 				sendPreconfBid(bidderClient, txHash, int64(blockNumber))
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
-				checkPendingTxs(client, bidderClient, pendingTxs, preconfCount)
+				checkPendingTxs(rpcClient, bidderClient, pendingTxs, preconfCount)
 			}
 			// frequency of Preconf submission
 			time.Sleep(time.Duration(PRECONF_SUBMISSION_FREQUENCY) * time.Second)
