@@ -40,10 +40,10 @@ type GethConfig struct {
 
 // AuthAcct holds the private key, public key, address, and transaction authorization information for an account.
 type AuthAcct struct {
-	PrivateKey *ecdsa.PrivateKey       // The private key for the account.
-	PublicKey  *ecdsa.PublicKey        // The public key derived from the private key.
-	Address    common.Address          // The Ethereum address derived from the public key.
-	Auth       *bind.TransactOpts      // The transaction options for signing transactions.
+	PrivateKey *ecdsa.PrivateKey  // The private key for the account.
+	PublicKey  *ecdsa.PublicKey   // The public key derived from the private key.
+	Address    common.Address     // The Ethereum address derived from the public key.
+	Auth       *bind.TransactOpts // The transaction options for signing transactions.
 }
 
 // NewBidderClient creates a new gRPC client connection to the bidder service and returns a Bidder instance.
@@ -83,11 +83,11 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 
 	// Create a new ethclient.Client using the RPC client
 	ec := ethclient.NewClient(client)
-	fmt.Println("geth client connected")
+	log.Println("geth client connected")
 	return ec, nil
 }
 
-// AuthenticateAddress converts a hex-encoded private key string to an AuthAcct struct, 
+// AuthenticateAddress converts a hex-encoded private key string to an AuthAcct struct,
 // which contains the account's private key, public key, address, and transaction authorization.
 //
 // Parameters:

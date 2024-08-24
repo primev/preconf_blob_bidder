@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create client: %v. Remember to connect to the mev-commit p2p bidder node.", err)
 	}
-	fmt.Println("Connected to mev-commit client")
+	log.Println("Connected to mev-commit client")
 
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
