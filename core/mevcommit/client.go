@@ -83,7 +83,6 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 
 	// Create a new ethclient.Client using the RPC client
 	ec := ethclient.NewClient(client)
-	log.Println("geth client connected")
 	return ec, nil
 }
 

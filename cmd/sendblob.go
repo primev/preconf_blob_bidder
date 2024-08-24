@@ -53,11 +53,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to geth client: %v", err)
 	}
+	log.Println("(rpc) geth client connected")
 
 	wsClient, err := bb.NewGethClient(*wsEndpoint)
 	if err != nil {
 		log.Fatalf("Failed to connect to geth client: %v", err)
 	}
+
+	log.Println("(ws) geth client connected")
 
 	headers := make(chan *types.Header)
 	sub, err := wsClient.SubscribeNewHead(context.Background(), headers)
