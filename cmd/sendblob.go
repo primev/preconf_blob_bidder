@@ -18,7 +18,6 @@ import (
 )
 
 var NUM_BLOBS = 6
-var PRECONF_SUBMISSION_FREQUENCY = 10
 var MAX_PRECONF_ATTEMPTS = 50
 
 func main() {
@@ -104,8 +103,6 @@ func main() {
 				// Check pending transactions and resend preconfirmation bids if necessary
 				checkPendingTxs(rpcClient, bidderClient, pendingTxs, preconfCount)
 			}
-			// frequency of Preconf submission
-			time.Sleep(time.Duration(PRECONF_SUBMISSION_FREQUENCY) * time.Second)
 		}
 	}
 }
