@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -85,7 +83,6 @@ func main() {
 	preconfCount := make(map[string]int)
 
 	for {
-		fmt.Println("----------------------------------------------")
 		select {
 		case <-timer.C:
 			log.Info("2 hours have passed. Stopping the loop.")
@@ -117,8 +114,7 @@ func main() {
 
 func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	currentTime := time.Now().UnixMilli()
-	//amount := "250000000000000"               // amount is in wei. Equivalent to .00025 ETH bids
-	amount := strconv.FormatInt(250000000000000+blockNumber, 10) // amount is in wei. Equivalent to .00025 ETH bids
+	amount := "250000000000000" // amount is in wei. Equivalent to .00025 ETH bids
 	decayStart := currentTime
 	decayEnd := currentTime + (time.Duration(24 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
 
