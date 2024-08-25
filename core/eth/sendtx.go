@@ -132,7 +132,7 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 //
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
-func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int) (string, uint64, error) {
+func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
@@ -248,11 +248,11 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 		if private {
 			// Send the transaction only to the Titan endpoint
 			//err = titan_client.SendTransaction(ctx, signedTx)
-			_, err = sendBundle("http://holesky-rpc.titanbuilder.xyz/", signedTx, blockNumber+2)
+			_, err = sendBundle("http://holesky-rpc.titanbuilder.xyz/", signedTx, blockNumber+offset)
 		} else {
 			// Send the transaction to the specified public RPC endpoint
 			//err = client.SendTransaction(ctx, signedTx)
-			_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+2)
+			_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
 		}
 
 		if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
@@ -304,7 +304,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 
 	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 
-	return signedTx.Hash().String(), blockNumber + 2, nil
+	return signedTx.Hash().String(), blockNumber + offset, nil
 }
 
 // suggestGasTipAndFeeCap suggests a gas tip cap and gas fee cap for a transaction, ensuring that the values

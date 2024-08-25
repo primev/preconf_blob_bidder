@@ -25,9 +25,9 @@ var MAX_PRECONF_ATTEMPTS = 50
 func main() {
 	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
 	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client endpoint")
-
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	private := flag.Bool("private", false, "Set to true for private transactions")
+	offset := flag.Uint64("offset", 1, "Number of blocks to delay the transaction")
 
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
@@ -95,7 +95,7 @@ func main() {
 		case header := <-headers:
 			log.Info("new block generated", "block", header.Number)
 			if len(pendingTxs) == 0 {
-				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS)
+				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
 				if err != nil {
 					log.Warn("failed to execute blob tx", "err", err)
 				}
