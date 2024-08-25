@@ -5,8 +5,6 @@ package mevcommit
 
 import (
 	"crypto/ecdsa"
-	"fmt"
-	"log"
 	"math/big"
 
 	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -57,7 +56,7 @@ func NewBidderClient(cfg BidderConfig) (*Bidder, error) {
 	// Establish a gRPC connection to the bidder service
 	conn, err := grpc.Dial(cfg.ServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		fmt.Printf("Failed to connect to gRPC server: %v", err)
+		log.Crit("Failed to connect to gRPC server", "err", err)
 		return nil, err
 	}
 
@@ -77,13 +76,11 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 	// Dial the Ethereum RPC endpoint
 	client, err := rpc.Dial(endpoint)
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
 
 	// Create a new ethclient.Client using the RPC client
 	ec := ethclient.NewClient(client)
-	log.Println("geth client connected")
 	return ec, nil
 }
 
@@ -95,23 +92,23 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 //
 // Returns:
 // - A pointer to an AuthAcct struct, or an error if authentication fails.
-func AuthenticateAddress(privateKeyHex string) (*AuthAcct, error) {
+func AuthenticateAddress(privateKeyHex string) (AuthAcct, error) {
 	if privateKeyHex == "" {
-		return nil, nil
+		return AuthAcct{}, nil
 	}
 
 	// Convert the hex-encoded private key to an ECDSA private key
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
-		log.Printf("Failed to load private key: %v", err)
-		return nil, err
+		log.Crit("Failed to load private key", "err", err)
+		return AuthAcct{}, err
 	}
 
 	// Extract the public key from the private key
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		log.Fatal("Failed to assert public key type")
+		log.Crit("Failed to assert public key type")
 	}
 
 	// Generate the Ethereum address from the public key
@@ -123,11 +120,11 @@ func AuthenticateAddress(privateKeyHex string) (*AuthAcct, error) {
 	// Create the transaction options with the private key and chain ID
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
-		log.Fatalf("Failed to create authorized transactor: %v", err)
+		log.Crit("Failed to create authorized transactor", "err", err)
 	}
 
 	// Return the AuthAcct struct containing the private key, public key, address, and transaction options
-	return &AuthAcct{
+	return AuthAcct{
 		PrivateKey: privateKey,
 		PublicKey:  publicKeyECDSA,
 		Address:    address,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,10 @@ func main() {
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	private := flag.Bool("private", false, "Set to true for private transactions")
 
+	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
+	glogger.Verbosity(log.LevelInfo)
+	log.SetDefault(log.NewLogger(glogger))
+
 	flag.Parse()
 	if *rpcEndpoint == "" {
 		log.Crit("use the rpc-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
@@ -35,6 +40,11 @@ func main() {
 
 	if *wsEndpoint == "" {
 		log.Crit("use the ws-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
+	}
+
+	authAcct, err := bb.AuthenticateAddress(*privateKeyHex)
+	if err != nil {
+		log.Crit("Failed to authenticate private key:", "err", err)
 	}
 
 	cfg := bb.BidderConfig{
@@ -85,12 +95,7 @@ func main() {
 		case header := <-headers:
 			log.Info("new block generated", "block-number", header.Number)
 			if len(pendingTxs) == 0 {
-				authAcct, err := bb.AuthenticateAddress(*privateKeyHex)
-				if err != nil {
-					log.Crit("Failed to authenticate private key:", "err", err)
-				}
-
-				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, *private, *authAcct, NUM_BLOBS)
+				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, *private, authAcct, NUM_BLOBS)
 				if err != nil {
 					log.Warn("failed to execute blob tx", "err", err)
 				}

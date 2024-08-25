@@ -133,11 +133,6 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
 func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, private bool, authAcct bb.AuthAcct, numBlobs int) (string, uint64, error) {
-	// Initialize logger
-	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
-	glogger.Verbosity(log.LevelInfo)
-	log.SetDefault(log.NewLogger(glogger))
-
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
