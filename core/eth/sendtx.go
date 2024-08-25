@@ -10,6 +10,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -132,24 +133,23 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 //
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
-func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, private bool, authAcct bb.AuthAcct, numBlobs int) (string, uint64, error) {
+func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int) (string, uint64, error) {
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", 0, fmt.Errorf("failed to cast public key to ECDSA")
+		return "", 0, errors.New("failed to cast public key to ECDSA")
 	}
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
 	ctx := context.Background()
 
 	var (
-		blockNumber      uint64
-		nonce            uint64
-		gasTipCap        *big.Int
-		gasFeeCap        *big.Int
-		parentHeader     *types.Header
-		err2, err3, err4 error
+		blockNumber uint64
+		nonce       uint64
+		gasTipCap   *big.Int
+		gasFeeCap   *big.Int
+		err1, err2  error
 	)
 
 	// Connect to the Titan Holesky client
@@ -165,35 +165,27 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 
 	// Fetch various transaction parameters in parallel
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		nonce, err = client.PendingNonceAt(context.Background(), fromAddress)
+		nonce, err1 = client.PendingNonceAt(context.Background(), fromAddress)
 	}()
 
 	go func() {
 		defer wg.Done()
-		gasTipCap, gasFeeCap, err3 = suggestGasTipAndFeeCap(client, ctx)
-	}()
-
-	go func() {
-		defer wg.Done()
-		parentHeader, err4 = client.HeaderByNumber(ctx, nil)
+		gasTipCap, gasFeeCap, err2 = suggestGasTipAndFeeCap(client, ctx)
 	}()
 
 	wg.Wait()
-	if err2 != nil {
+	if err1 != nil {
 		return "", 0, err2
 	}
-	if err3 != nil {
+	if err2 != nil {
 		return "", 0, err3
 	}
-	if err4 != nil {
-		return "", 0, err4
-	}
 
-	log.Info("nonce tracker", "nonce", nonce)
+	log.Info("account nonce tracker", "nonce", nonce)
 	blockNumber = parentHeader.Number.Uint64()
 
 	// Estimate the gas limit for the transaction
@@ -207,7 +199,8 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	if err != nil {
 		return "", 0, err
 	}
-	fmt.Println("est", gasLimit)
+
+	log.Info("gas ", "gas limit", gasLimit)
 
 	// Calculate the blob fee cap and ensure it is sufficient for transaction replacement
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
@@ -337,25 +330,65 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 //
 // Returns:
 // - The suggested gas tip cap and gas fee cap as big.Int pointers, or an error if the suggestions fail.
+//func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big.Int, *big.Int, error) {
+//	gasTipCap, err := client.SuggestGasTipCap(ctx)
+//	if err != nil {
+//		return nil, nil, err
+//	}
+//
+//	minGasTipCap := big.NewInt(1000000000) // 1 Gwei minimum gas tip cap
+//	if gasTipCap.Cmp(minGasTipCap) < 0 {
+//		gasTipCap = minGasTipCap
+//	}
+//
+//	gasFeeCap, err := client.SuggestGasPrice(ctx)
+//	if err != nil {
+//		return nil, nil, err
+//	}
+//
+//	buffer := big.NewInt(1000000000) // 1 Gwei buffer to ensure gas fee cap is higher than gas tip cap
+//	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
+//		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
+//	}
+//
+//	return gasTipCap, gasFeeCap, nil
+//}
+
+// suggestGasTipAndFeeCap suggests a gas tip cap and gas fee cap for a transaction, ensuring that the values
+// are sufficient for timely inclusion in the next block.
+//
+// Parameters:
+// - client: The Ethereum client instance.
+// - ctx: The context for making requests to the Ethereum client.
+//
+// Returns:
+// - The suggested gas tip cap and gas fee cap as big.Int pointers, or an error if the suggestions fail.
 func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big.Int, *big.Int, error) {
-	gasTipCap, err := client.SuggestGasTipCap(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+	var (
+		gasTipCap, gasFeeCap *big.Int
+		err1, err2           error
+	)
 
-	minGasTipCap := big.NewInt(1000000000) // 1 Gwei minimum gas tip cap
-	if gasTipCap.Cmp(minGasTipCap) < 0 {
-		gasTipCap = minGasTipCap
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	gasFeeCap, err := client.SuggestGasPrice(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+	go func() {
+		defer wg.Done()
+		gasTipCap, err1 = client.SuggestGasTipCap(ctx)
+	}()
 
-	buffer := big.NewInt(1000000000) // 1 Gwei buffer to ensure gas fee cap is higher than gas tip cap
-	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
-		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
+	go func() {
+		defer wg.Done()
+		gasFeeCap, err2 = client.SuggestGasPrice(ctx)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil {
+		return nil, nil, err1
+	}
+	if err2 != nil {
+		return nil, nil, err2
 	}
 
 	return gasTipCap, gasFeeCap, nil
