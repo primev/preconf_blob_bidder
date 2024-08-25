@@ -83,7 +83,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 	log.Info("End Time", "time", startTimeBeforeSaveResponses)
 
 	// Save all bid responses to a file
-	saveBidResponses("data/response.json", responses)
+	go saveBidResponses("data/response.json", responses)
 	return response, nil
 }
 
