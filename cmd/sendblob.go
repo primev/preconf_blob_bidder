@@ -93,20 +93,17 @@ func main() {
 		case err := <-sub.Err():
 			log.Crit("subscription error", "err", err)
 		case header := <-headers:
-			log.Info("new block generated", "block-number", header.Number)
+			log.Info("new block generated", "block", header.Number)
 			if len(pendingTxs) == 0 {
-				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, *private, authAcct, NUM_BLOBS)
+				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS)
 				if err != nil {
 					log.Warn("failed to execute blob tx", "err", err)
 				}
 
-				// log.Printf("Sent tx %s at block number: %d", txHash, blockNumber)
-
 				//pendingTxs[txHash] = int64(blockNumber)
 				preconfCount[txHash] = 1
 				blobCount++
-				log.Info("number of blobs sent", "count", blobCount)
-				//log.Printf("Number of blobs sent: %d", blobCount)
+				log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
 
 				// Send initial preconfirmation bid
 				sendPreconfBid(bidderClient, txHash, int64(blockNumber))
@@ -129,7 +126,7 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	if err != nil {
 		log.Warn("failed to send bid", "err", err)
 	} else {
-		log.Info("sent preconfirmation bid", "tx", txHash, "block-number", blockNumber)
+		log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber)
 	}
 }
 
