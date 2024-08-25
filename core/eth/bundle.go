@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"net/http"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type FlashbotsPayload struct {
@@ -18,10 +19,20 @@ type FlashbotsPayload struct {
 	ID      int                      `json:"id"`
 }
 
+var httpClient = &http.Client{
+	Timeout: 12 * time.Second,
+	Transport: &http.Transport{
+		DisableKeepAlives:   false,
+		MaxIdleConnsPerHost: 1,
+		IdleConnTimeout:     12 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	},
+}
+
 func sendBundle(RPCURL string, signedTx *types.Transaction, blkNum uint64) (string, error) {
 	binary, err := signedTx.MarshalBinary()
 	if err != nil {
-		log.Fatalf("Error marshal transaction: %v", err)
+		log.Error("Error marshal transaction", "err", err)
 	}
 
 	blockNum := hexutil.EncodeUint64(blkNum)
@@ -45,22 +56,21 @@ func sendBundle(RPCURL string, signedTx *types.Transaction, blkNum uint64) (stri
 		return "", err
 	}
 
-	httpClient := &http.Client{}
 	req, err := http.NewRequest("POST", RPCURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		log.Fatalln(err)
+		log.Error("an error occurred creating request", "err", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		log.Error("an error occurred", "err", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		log.Error("an error occurred", "err", err)
 	}
 
 	return string(body), nil
