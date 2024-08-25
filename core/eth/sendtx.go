@@ -23,7 +23,6 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -145,6 +144,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 	ctx := context.Background()
 
 	var (
+		gasLimit    = uint64(500_000)
 		blockNumber uint64
 		nonce       uint64
 		gasTipCap   *big.Int
@@ -179,28 +179,14 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 
 	wg.Wait()
 	if err1 != nil {
-		return "", 0, err2
+		return "", 0, err1
 	}
 	if err2 != nil {
-		return "", 0, err3
+		return "", 0, err2
 	}
 
 	log.Info("account nonce tracker", "nonce", nonce)
 	blockNumber = parentHeader.Number.Uint64()
-
-	// Estimate the gas limit for the transaction
-	gasLimit, err := client.EstimateGas(ctx, ethereum.CallMsg{
-		From:      fromAddress,
-		To:        &fromAddress,
-		GasFeeCap: gasFeeCap,
-		GasTipCap: gasTipCap,
-		Value:     big.NewInt(0),
-	})
-	if err != nil {
-		return "", 0, err
-	}
-
-	log.Info("gas ", "gas limit", gasLimit)
 
 	// Calculate the blob fee cap and ensure it is sufficient for transaction replacement
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
@@ -239,7 +225,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 		Nonce:      nonce,
 		GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
 		GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
-		Gas:        gasLimit * 120 / 10,
+		Gas:        gasLimit,
 		To:         fromAddress,
 		BlobFeeCap: uint256.MustFromBig(blobFeeCap),
 		BlobHashes: blobHashes,
@@ -280,7 +266,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 				Nonce:      nonce,
 				GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
 				GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
-				Gas:        gasLimit * 120 / 10,
+				Gas:        gasLimit,
 				To:         fromAddress,
 				BlobFeeCap: uint256.MustFromBig(blobFeeCap),
 				BlobHashes: blobHashes,
