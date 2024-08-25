@@ -204,7 +204,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 
 	// Adjust gas tip cap and fee cap incrementally
 	//priorityFeeIncrement := big.NewInt(10000000) // 0.01 gwei increase
-	priorityFeeIncrement := big.NewInt(100000000000) // 0.01 gwei increase
+	priorityFeeIncrement := big.NewInt(20000000000) // 20 gwei increase
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
 	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (0.5 gwei)
