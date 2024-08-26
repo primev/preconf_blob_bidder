@@ -28,11 +28,6 @@ import (
 // Returns:
 // - A pb.Bidder_SendBidClient to receive bid responses, or an error if the bid fails.
 func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
-	// Initialize logger
-	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
-	glogger.Verbosity(log.LevelInfo)
-	log.SetDefault(log.NewLogger(glogger))
-
 	// Create a new bid request
 	bidRequest := &pb.Bid{
 		TxHashes:            txHashes,
@@ -60,7 +55,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 	submitTimestamp := time.Now().Unix()
 
 	// Save the bid request along with the submission timestamp
-	saveBidRequest("data/bid.json", bidRequest, submitTimestamp)
+	go saveBidRequest("data/bid.json", bidRequest, submitTimestamp)
 
 	// Continuously receive bid responses
 	for {
@@ -83,7 +78,7 @@ func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decaySta
 	log.Info("End Time", "time", startTimeBeforeSaveResponses)
 
 	// Save all bid responses to a file
-	saveBidResponses("data/response.json", responses)
+	go saveBidResponses("data/response.json", responses)
 	return response, nil
 }
 

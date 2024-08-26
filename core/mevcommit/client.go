@@ -5,8 +5,6 @@ package mevcommit
 
 import (
 	"crypto/ecdsa"
-	"fmt"
-	"log"
 	"math/big"
 
 	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -40,10 +39,10 @@ type GethConfig struct {
 
 // AuthAcct holds the private key, public key, address, and transaction authorization information for an account.
 type AuthAcct struct {
-	PrivateKey *ecdsa.PrivateKey       // The private key for the account.
-	PublicKey  *ecdsa.PublicKey        // The public key derived from the private key.
-	Address    common.Address          // The Ethereum address derived from the public key.
-	Auth       *bind.TransactOpts      // The transaction options for signing transactions.
+	PrivateKey *ecdsa.PrivateKey  // The private key for the account.
+	PublicKey  *ecdsa.PublicKey   // The public key derived from the private key.
+	Address    common.Address     // The Ethereum address derived from the public key.
+	Auth       *bind.TransactOpts // The transaction options for signing transactions.
 }
 
 // NewBidderClient creates a new gRPC client connection to the bidder service and returns a Bidder instance.
@@ -57,7 +56,7 @@ func NewBidderClient(cfg BidderConfig) (*Bidder, error) {
 	// Establish a gRPC connection to the bidder service
 	conn, err := grpc.Dial(cfg.ServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		fmt.Printf("Failed to connect to gRPC server: %v", err)
+		log.Crit("Failed to connect to gRPC server", "err", err)
 		return nil, err
 	}
 
@@ -77,42 +76,39 @@ func NewGethClient(endpoint string) (*ethclient.Client, error) {
 	// Dial the Ethereum RPC endpoint
 	client, err := rpc.Dial(endpoint)
 	if err != nil {
-		log.Println(err)
 		return nil, err
 	}
 
 	// Create a new ethclient.Client using the RPC client
 	ec := ethclient.NewClient(client)
-	fmt.Println("geth client connected")
 	return ec, nil
 }
 
-// AuthenticateAddress converts a hex-encoded private key string to an AuthAcct struct, 
+// AuthenticateAddress converts a hex-encoded private key string to an AuthAcct struct,
 // which contains the account's private key, public key, address, and transaction authorization.
 //
 // Parameters:
 // - privateKeyHex: The hex-encoded private key string.
-// - client: The ethclient.Client instance connected to the Ethereum node.
 //
 // Returns:
 // - A pointer to an AuthAcct struct, or an error if authentication fails.
-func AuthenticateAddress(privateKeyHex string, client *ethclient.Client) (*AuthAcct, error) {
+func AuthenticateAddress(privateKeyHex string) (AuthAcct, error) {
 	if privateKeyHex == "" {
-		return nil, nil
+		return AuthAcct{}, nil
 	}
 
 	// Convert the hex-encoded private key to an ECDSA private key
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
-		log.Printf("Failed to load private key: %v", err)
-		return nil, err
+		log.Crit("Failed to load private key", "err", err)
+		return AuthAcct{}, err
 	}
 
 	// Extract the public key from the private key
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		log.Fatal("Failed to assert public key type")
+		log.Crit("Failed to assert public key type")
 	}
 
 	// Generate the Ethereum address from the public key
@@ -124,11 +120,11 @@ func AuthenticateAddress(privateKeyHex string, client *ethclient.Client) (*AuthA
 	// Create the transaction options with the private key and chain ID
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
-		log.Fatalf("Failed to create authorized transactor: %v", err)
+		log.Crit("Failed to create authorized transactor", "err", err)
 	}
 
 	// Return the AuthAcct struct containing the private key, public key, address, and transaction options
-	return &AuthAcct{
+	return AuthAcct{
 		PrivateKey: privateKey,
 		PublicKey:  publicKeyECDSA,
 		Address:    address,

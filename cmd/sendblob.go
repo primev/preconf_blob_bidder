@@ -2,24 +2,49 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
-	"fmt"
-	"log"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	ee "github.com/primev/preconf_blob_bidder/core/eth"
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
 var NUM_BLOBS = 6
-var PRECONF_SUBMISSION_FREQUENCY = 10
 var MAX_PRECONF_ATTEMPTS = 50
 
 func main() {
+	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
+	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client endpoint")
+	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
+	private := flag.Bool("private", false, "Set to true for private transactions")
+	offset := flag.Uint64("offset", 1, "Number of blocks to delay the transaction")
+
+	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
+	glogger.Verbosity(log.LevelInfo)
+	log.SetDefault(log.NewLogger(glogger))
+
+	flag.Parse()
+	if *rpcEndpoint == "" {
+		log.Crit("use the rpc-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
+	}
+
+	if *wsEndpoint == "" {
+		log.Crit("use the ws-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
+	}
+
+	authAcct, err := bb.AuthenticateAddress(*privateKeyHex)
+	if err != nil {
+		log.Crit("Failed to authenticate private key:", "err", err)
+	}
+
 	cfg := bb.BidderConfig{
 		ServerAddress: "127.0.0.1:13524",
 		LogFmt:        "json",
@@ -28,22 +53,28 @@ func main() {
 
 	bidderClient, err := bb.NewBidderClient(cfg)
 	if err != nil {
-		log.Fatalf("Failed to create client: %v. Remember to connect to the mev-commit p2p bidder node.", err)
-	}
-	fmt.Println("Connected to mev-commit client")
-
-	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
-	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
-	private := flag.Bool("private", false, "Set to true for private transactions")
-
-	flag.Parse()
-	if *endpoint == "" {
-		log.Fatal("Endpoint is required. Use the -endpoint flag to provide it.")
+		log.Crit("failed to create bidder client, remember to connect to the mev-commit p2p bidder node.", "err", err)
 	}
 
-	client, err := bb.NewGethClient(*endpoint)
+	log.Info("connected to mev-commit client")
+
+	rpcClient, err := bb.NewGethClient(*rpcEndpoint)
 	if err != nil {
-		log.Fatalf("Failed to connect to geth client: %v", err)
+		log.Crit("failed to connect to geth client", "err", err)
+	}
+	log.Info("(rpc) geth client connected")
+
+	wsClient, err := bb.NewGethClient(*wsEndpoint)
+	if err != nil {
+		log.Crit("failed to connect to geth client", "err", err)
+	}
+
+	log.Info("(ws) geth client connected")
+
+	headers := make(chan *types.Header)
+	sub, err := wsClient.SubscribeNewHead(context.Background(), headers)
+	if err != nil {
+		log.Crit("failed to subscribe to new blocks", "err", err)
 	}
 
 	timer := time.NewTimer(24 * 14 * time.Hour)
@@ -54,40 +85,29 @@ func main() {
 	for {
 		select {
 		case <-timer.C:
-			fmt.Println("2 hours have passed. Stopping the loop.")
+			log.Info("2 hours have passed. Stopping the loop.")
 			return
-		default:
+		case err := <-sub.Err():
+			log.Crit("subscription error", "err", err)
+		case header := <-headers:
+			log.Info("new block generated", "block", header.Number)
 			if len(pendingTxs) == 0 {
-				authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
+				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
 				if err != nil {
-					log.Fatalf("Failed to authenticate private key: %v", err)
+					log.Warn("failed to execute blob tx", "err", err)
 				}
 
-				txHash, err := ee.ExecuteBlobTransaction(client, *endpoint, *private, *authAcct, NUM_BLOBS)
-				if err != nil {
-					log.Fatalf("Failed to execute blob transaction: %v", err)
-				}
-
-				blockNumber, err := client.BlockNumber(context.Background())
-				if err != nil {
-					log.Fatalf("Failed to retrieve block number: %v", err)
-				}
-
-				// log.Printf("Sent tx %s at block number: %d", txHash, blockNumber)
-
-				pendingTxs[txHash] = int64(blockNumber)
+				//pendingTxs[txHash] = int64(blockNumber)
 				preconfCount[txHash] = 1
 				blobCount++
-				log.Printf("Number of blobs sent: %d", blobCount)
+				log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
 
 				// Send initial preconfirmation bid
-				sendPreconfBid(bidderClient, txHash, int64(blockNumber)+1)
+				sendPreconfBid(bidderClient, txHash, int64(blockNumber))
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
-				checkPendingTxs(client, bidderClient, pendingTxs, preconfCount)
+				checkPendingTxs(rpcClient, bidderClient, pendingTxs, preconfCount)
 			}
-			// frequency of Preconf submission
-			time.Sleep(time.Duration(PRECONF_SUBMISSION_FREQUENCY) * time.Second)
 		}
 	}
 }
@@ -100,9 +120,9 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 
 	_, err := bidderClient.SendBid([]string{strings.TrimPrefix(txHash, "0x")}, amount, blockNumber, decayStart, decayEnd)
 	if err != nil {
-		log.Printf("Failed to send bid: %v", err)
+		log.Warn("failed to send bid", "err", err)
 	} else {
-		log.Printf("Sent preconfirmation bid for tx: %s for block number: %d", txHash, blockNumber)
+		log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber)
 	}
 }
 
@@ -114,28 +134,37 @@ func checkPendingTxs(client *ethclient.Client, bidderClient *bb.Bidder, pendingT
 				// Transaction is still pending, resend preconfirmation bid
 				currentBlockNumber, err := client.BlockNumber(context.Background())
 				if err != nil {
-					log.Printf("Failed to retrieve current block number: %v", err)
+					log.Error("failed to retrieve current block number", "err", err)
 					continue
 				}
 				if currentBlockNumber > uint64(initialBlock) {
 					sendPreconfBid(bidderClient, txHash, int64(currentBlockNumber)+1)
 					preconfCount[txHash]++
-					log.Printf("Resent preconfirmation bid for tx: %s in block number: %d. Total preconfirmations: %d", txHash, currentBlockNumber, preconfCount[txHash])
+
+					log.Info("Resent preconfirmation bid for tx",
+						"txHash", txHash,
+						"block number", currentBlockNumber,
+						"total preconfirmations", preconfCount[txHash])
 
 					// Check if preconfCount exceeds MAX_PRECONF_ATTEMPTS
 					if preconfCount[txHash] >= MAX_PRECONF_ATTEMPTS {
-						log.Printf("Max preconfirmation attempts reached for tx: %s. Restarting with a new transaction.", txHash)
+						log.Warn("Max preconfirmation attempts reached for tx. Restarting with a new transaction.",
+							"txHash", txHash)
 						delete(pendingTxs, txHash)
 						delete(preconfCount, txHash)
 					}
 				}
 			} else {
-				log.Printf("Error checking transaction receipt: %v", err)
+				log.Error("Error checking transaction receipt", "err", err)
 			}
 		} else {
 			// Transaction is confirmed, remove from pendingTxs
 			delete(pendingTxs, txHash)
-			log.Printf("Transaction %s confirmed in block %d, initially sent in block %d. Total preconfirmations: %d", txHash, receipt.BlockNumber.Uint64(), initialBlock, preconfCount[txHash])
+			log.Info("Transaction confirmed",
+				"txHash", txHash,
+				"confirmed block", receipt.BlockNumber.Uint64(),
+				"initially sent block", initialBlock,
+				"total preconfirmations", preconfCount[txHash])
 			delete(preconfCount, txHash)
 		}
 	}

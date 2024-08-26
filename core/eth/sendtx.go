@@ -10,6 +10,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -22,7 +23,6 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -107,6 +107,19 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	return signedTx.Hash().Hex(), nil
 }
 
+var (
+	chainID     *big.Int
+	chainIDOnce sync.Once
+	chainIDErr  error
+)
+
+func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error) {
+	chainIDOnce.Do(func() {
+		chainID, chainIDErr = client.NetworkID(ctx)
+	})
+	return chainID, chainIDErr
+}
+
 // ExecuteBlobTransaction sends a signed blob transaction to the network. If the private flag is set to true,
 // the transaction is sent only to the Titan endpoint. Otherwise, it is sent to the specified public RPC endpoint.
 //
@@ -119,93 +132,61 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 //
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
-func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, private bool, authAcct bb.AuthAcct, numBlobs int) (string, error) {
-	// Initialize logger
-	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
-	glogger.Verbosity(log.LevelInfo)
-	log.SetDefault(log.NewLogger(glogger))
-
+func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", fmt.Errorf("failed to cast public key to ECDSA")
+		return "", 0, errors.New("failed to cast public key to ECDSA")
 	}
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
 	ctx := context.Background()
 
 	var (
-		chainID                *big.Int
-		nonce                  uint64
-		gasTipCap              *big.Int
-		gasFeeCap              *big.Int
-		parentHeader           *types.Header
-		err1, err2, err3, err4 error
+		gasLimit    = uint64(500_000)
+		blockNumber uint64
+		nonce       uint64
+		gasTipCap   *big.Int
+		gasFeeCap   *big.Int
+		err1, err2  error
 	)
 
 	// Connect to the Titan Holesky client
-	titan_client, err := bb.NewGethClient("http://holesky-rpc.titanbuilder.xyz/")
-	if err != nil {
-		fmt.Println("Failed to connect to titan client: ", err)
-	}
+	//	titan_client, err := bb.NewGethClient("http://holesky-rpc.titanbuilder.xyz/")
+	//	if err != nil {
+	//		fmt.Println("Failed to connect to titan client: ", err)
+	//	}
 
-	// Fetch the latest block number
-	var blockNumber uint64
-	blockNumber, err = client.BlockNumber(ctx)
+	chainID, err := getChainID(client, context.Background())
 	if err != nil {
-		return "cant fetch latest block number", err
+		return "", 0, err
 	}
 
 	// Fetch various transaction parameters in parallel
 	var wg sync.WaitGroup
-	wg.Add(4)
+	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		chainID, err1 = client.NetworkID(ctx)
+		nonce, err1 = client.PendingNonceAt(context.Background(), fromAddress)
 	}()
 
 	go func() {
 		defer wg.Done()
-		nonce, err2 = client.NonceAt(ctx, fromAddress, new(big.Int).SetUint64(blockNumber))
-	}()
-
-	go func() {
-		defer wg.Done()
-		gasTipCap, gasFeeCap, err3 = suggestGasTipAndFeeCap(client, ctx)
-	}()
-
-	go func() {
-		defer wg.Done()
-		parentHeader, err4 = client.HeaderByNumber(ctx, nil)
+		gasTipCap, gasFeeCap, err2 = suggestGasTipAndFeeCap(client, ctx)
 	}()
 
 	wg.Wait()
 	if err1 != nil {
-		return "", err1
+		return "", 0, err1
 	}
 	if err2 != nil {
-		return "", err2
-	}
-	if err3 != nil {
-		return "", err3
-	}
-	if err4 != nil {
-		return "", err4
+		return "", 0, err2
 	}
 
-	// Estimate the gas limit for the transaction
-	gasLimit, err := client.EstimateGas(ctx, ethereum.CallMsg{
-		From:      fromAddress,
-		To:        &fromAddress,
-		GasFeeCap: gasFeeCap,
-		GasTipCap: gasTipCap,
-		Value:     big.NewInt(0),
-	})
-	if err != nil {
-		return "", err
-	}
+	log.Info("account nonce tracker", "nonce", nonce)
+	blockNumber = parentHeader.Number.Uint64()
 
 	// Calculate the blob fee cap and ensure it is sufficient for transaction replacement
 	parentExcessBlobGas := eip4844.CalcExcessBlobGas(*parentHeader.ExcessBlobGas, *parentHeader.BlobGasUsed)
@@ -222,7 +203,8 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
 
 	// Adjust gas tip cap and fee cap incrementally
-	priorityFeeIncrement := big.NewInt(10000000) // 0.01 gwei increase
+	//priorityFeeIncrement := big.NewInt(10000000) // 0.01 gwei increase
+	priorityFeeIncrement := big.NewInt(20000000000) // 20 gwei increase
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
 	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (0.5 gwei)
@@ -243,7 +225,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 		Nonce:      nonce,
 		GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
 		GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
-		Gas:        gasLimit * 120 / 10,
+		Gas:        gasLimit,
 		To:         fromAddress,
 		BlobFeeCap: uint256.MustFromBig(blobFeeCap),
 		BlobHashes: blobHashes,
@@ -253,22 +235,24 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	// Sign the transaction with the authenticated account's private key
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	signedTx, err := auth.Signer(auth.From, tx)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 
 	retryAttempts := 5
 	for i := 0; i < retryAttempts; i++ {
 		if private {
 			// Send the transaction only to the Titan endpoint
-			err = titan_client.SendTransaction(ctx, signedTx)
+			//err = titan_client.SendTransaction(ctx, signedTx)
+			_, err = sendBundle("http://holesky-rpc.titanbuilder.xyz/", signedTx, blockNumber+offset)
 		} else {
 			// Send the transaction to the specified public RPC endpoint
-			err = client.SendTransaction(ctx, signedTx)
+			//err = client.SendTransaction(ctx, signedTx)
+			_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
 		}
 
 		if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
@@ -282,7 +266,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 				Nonce:      nonce,
 				GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
 				GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
-				Gas:        gasLimit * 120 / 10,
+				Gas:        gasLimit,
 				To:         fromAddress,
 				BlobFeeCap: uint256.MustFromBig(blobFeeCap),
 				BlobHashes: blobHashes,
@@ -290,7 +274,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 			})
 			signedTx, err = auth.Signer(auth.From, tx)
 			if err != nil {
-				return "", err
+				return "", 0, err
 			}
 		} else {
 			break
@@ -298,7 +282,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
+		return "", 0, fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
 	}
 
 	// Record the transaction parameters and save them asynchronously
@@ -320,7 +304,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 
 	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 
-	return signedTx.Hash().String(), nil
+	return signedTx.Hash().String(), blockNumber + offset, nil
 }
 
 // suggestGasTipAndFeeCap suggests a gas tip cap and gas fee cap for a transaction, ensuring that the values
@@ -332,25 +316,65 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, privat
 //
 // Returns:
 // - The suggested gas tip cap and gas fee cap as big.Int pointers, or an error if the suggestions fail.
+//func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big.Int, *big.Int, error) {
+//	gasTipCap, err := client.SuggestGasTipCap(ctx)
+//	if err != nil {
+//		return nil, nil, err
+//	}
+//
+//	minGasTipCap := big.NewInt(1000000000) // 1 Gwei minimum gas tip cap
+//	if gasTipCap.Cmp(minGasTipCap) < 0 {
+//		gasTipCap = minGasTipCap
+//	}
+//
+//	gasFeeCap, err := client.SuggestGasPrice(ctx)
+//	if err != nil {
+//		return nil, nil, err
+//	}
+//
+//	buffer := big.NewInt(1000000000) // 1 Gwei buffer to ensure gas fee cap is higher than gas tip cap
+//	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
+//		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
+//	}
+//
+//	return gasTipCap, gasFeeCap, nil
+//}
+
+// suggestGasTipAndFeeCap suggests a gas tip cap and gas fee cap for a transaction, ensuring that the values
+// are sufficient for timely inclusion in the next block.
+//
+// Parameters:
+// - client: The Ethereum client instance.
+// - ctx: The context for making requests to the Ethereum client.
+//
+// Returns:
+// - The suggested gas tip cap and gas fee cap as big.Int pointers, or an error if the suggestions fail.
 func suggestGasTipAndFeeCap(client *ethclient.Client, ctx context.Context) (*big.Int, *big.Int, error) {
-	gasTipCap, err := client.SuggestGasTipCap(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+	var (
+		gasTipCap, gasFeeCap *big.Int
+		err1, err2           error
+	)
 
-	minGasTipCap := big.NewInt(1000000000) // 1 Gwei minimum gas tip cap
-	if gasTipCap.Cmp(minGasTipCap) < 0 {
-		gasTipCap = minGasTipCap
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	gasFeeCap, err := client.SuggestGasPrice(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+	go func() {
+		defer wg.Done()
+		gasTipCap, err1 = client.SuggestGasTipCap(ctx)
+	}()
 
-	buffer := big.NewInt(1000000000) // 1 Gwei buffer to ensure gas fee cap is higher than gas tip cap
-	if gasFeeCap.Cmp(new(big.Int).Add(gasTipCap, buffer)) < 0 {
-		gasFeeCap = new(big.Int).Add(gasTipCap, buffer)
+	go func() {
+		defer wg.Done()
+		gasFeeCap, err2 = client.SuggestGasPrice(ctx)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil {
+		return nil, nil, err1
+	}
+	if err2 != nil {
+		return nil, nil, err2
 	}
 
 	return gasTipCap, gasFeeCap, nil
