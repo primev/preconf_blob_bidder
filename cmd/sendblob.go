@@ -98,7 +98,7 @@ func main() {
 				}
 
 				//pendingTxs[txHash] = int64(blockNumber)
-				preconfCount[txHash] = 1
+				//preconfCount[txHash] = 1
 				blobCount++
 				log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
 
