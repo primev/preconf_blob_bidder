@@ -19,6 +19,7 @@ import (
 
 var NUM_BLOBS = 6
 var MAX_PRECONF_ATTEMPTS = 50
+var RECONNECT_INTERVAL = 5 * time.Second // Interval to wait before attempting to reconnect
 
 func main() {
 	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
@@ -64,11 +65,11 @@ func main() {
 	}
 	log.Info("(rpc) geth client connected")
 
-	wsClient, err := bb.NewGethClient(*wsEndpoint)
+	// Initial WebSocket connection
+	wsClient, err := connectWSClient(*wsEndpoint)
 	if err != nil {
 		log.Crit("failed to connect to geth client", "err", err)
 	}
-
 	log.Info("(ws) geth client connected")
 
 	headers := make(chan *types.Header)
@@ -88,28 +89,51 @@ func main() {
 			log.Info("2 hours have passed. Stopping the loop.")
 			return
 		case err := <-sub.Err():
-			log.Crit("subscription error", "err", err)
+			log.Warn("subscription error", "err", err)
+			wsClient, sub = reconnectWSClient(*wsEndpoint, headers)
+			continue
 		case header := <-headers:
 			log.Info("new block generated", "block", header.Number)
 			if len(pendingTxs) == 0 {
 				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
 				if err != nil {
 					log.Warn("failed to execute blob tx", "err", err)
+				} else {
+					preconfCount[txHash] = 1
+					blobCount++
+					log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
+					// Send initial preconfirmation bid
+					sendPreconfBid(bidderClient, txHash, int64(blockNumber))
 				}
-
-				//pendingTxs[txHash] = int64(blockNumber)
-				preconfCount[txHash] = 1
-				blobCount++
-				log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
-
-				// Send initial preconfirmation bid
-				sendPreconfBid(bidderClient, txHash, int64(blockNumber))
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
 				checkPendingTxs(rpcClient, bidderClient, pendingTxs, preconfCount)
 			}
 		}
 	}
+}
+
+func connectWSClient(wsEndpoint string) (*ethclient.Client, error) {
+	wsClient, err := bb.NewGethClient(wsEndpoint)
+	if err != nil {
+		log.Warn("failed to connect to websocket client", "err", err)
+		time.Sleep(RECONNECT_INTERVAL)
+		return connectWSClient(wsEndpoint)
+	}
+	return wsClient, nil
+}
+
+func reconnectWSClient(wsEndpoint string, headers chan *types.Header) (*ethclient.Client, ethereum.Subscription) {
+	log.Info("attempting to reconnect websocket client...")
+	wsClient, err := connectWSClient(wsEndpoint)
+	if err != nil {
+		log.Crit("failed to reconnect to websocket client", "err", err)
+	}
+	sub, err := wsClient.SubscribeNewHead(context.Background(), headers)
+	if err != nil {
+		log.Crit("failed to resubscribe to new blocks", "err", err)
+	}
+	return wsClient, sub
 }
 
 func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
