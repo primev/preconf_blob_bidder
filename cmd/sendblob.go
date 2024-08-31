@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -15,11 +17,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	ee "github.com/primev/preconf_blob_bidder/core/eth"
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
+	"golang.org/x/exp/rand"
 )
 
 var NUM_BLOBS = 6
 var MAX_PRECONF_ATTEMPTS = 50
-var RECONNECT_INTERVAL = 5 * time.Second // Interval to wait before attempting to reconnect
+var RECONNECT_INTERVAL = 30 * time.Second // Interval to wait before attempting to reconnect
+var MAX_RPC_RETRIES = 5                   // Max retries for RPC endpoint
+var RPC_TIMEOUT = 30 * time.Second        // Timeout for RPC calls
 
 func main() {
 	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
@@ -59,10 +64,7 @@ func main() {
 
 	log.Info("connected to mev-commit client")
 
-	rpcClient, err := bb.NewGethClient(*rpcEndpoint)
-	if err != nil {
-		log.Crit("failed to connect to geth client", "err", err)
-	}
+	rpcClient := connectRPCClientWithRetries(*rpcEndpoint, MAX_RPC_RETRIES, RPC_TIMEOUT)
 	log.Info("(rpc) geth client connected")
 
 	// Initial WebSocket connection
@@ -113,6 +115,28 @@ func main() {
 	}
 }
 
+// Function to connect to RPC client with retry logic and timeout
+func connectRPCClientWithRetries(rpcEndpoint string, maxRetries int, timeout time.Duration) *ethclient.Client {
+	var rpcClient *ethclient.Client
+	var err error
+
+	for i := 0; i < maxRetries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		rpcClient, err = ethclient.DialContext(ctx, rpcEndpoint)
+		if err == nil {
+			return rpcClient
+		}
+
+		log.Warn("failed to connect to RPC client, retrying...", "attempt", i+1, "err", err)
+		time.Sleep(RECONNECT_INTERVAL * time.Duration(math.Pow(2, float64(i)))) // Exponential backoff
+	}
+
+	log.Crit("failed to connect to RPC client after retries", "err", err)
+	return nil
+}
+
 func connectWSClient(wsEndpoint string) (*ethclient.Client, error) {
 	wsClient, err := bb.NewGethClient(wsEndpoint)
 	if err != nil {
@@ -123,30 +147,56 @@ func connectWSClient(wsEndpoint string) (*ethclient.Client, error) {
 	return wsClient, nil
 }
 
+// Reconnect function for WebSocket client
 func reconnectWSClient(wsEndpoint string, headers chan *types.Header) (*ethclient.Client, ethereum.Subscription) {
-	log.Info("attempting to reconnect websocket client...")
-	wsClient, err := connectWSClient(wsEndpoint)
-	if err != nil {
-		log.Crit("failed to reconnect to websocket client", "err", err)
+	var wsClient *ethclient.Client
+	var sub ethereum.Subscription
+	var err error
+
+	for i := 0; i < 10; i++ { // Retry logic for WebSocket connection
+		wsClient, err = connectWSClient(wsEndpoint)
+		if err == nil {
+			log.Info("(ws) geth client reconnected")
+			sub, err = wsClient.SubscribeNewHead(context.Background(), headers)
+			if err == nil {
+				return wsClient, sub
+			}
+		}
+		log.Warn("failed to reconnect WebSocket client, retrying...", "attempt", i+1, "err", err)
+		time.Sleep(RECONNECT_INTERVAL)
 	}
-	sub, err := wsClient.SubscribeNewHead(context.Background(), headers)
-	if err != nil {
-		log.Crit("failed to resubscribe to new blocks", "err", err)
-	}
-	return wsClient, sub
+	log.Crit("failed to reconnect WebSocket client after retries", "err", err)
+	return nil, nil
 }
 
 func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
+	// Seed the random number generator
+	rand.Seed(uint64(time.Now().UnixNano()))
+
+	// Generate a random number between 0.00025 and 0.005 ETH
+	minAmount := 0.00025
+	maxAmount := 0.005
+	randomEthAmount := minAmount + rand.Float64()*(maxAmount-minAmount)
+
+	// Convert the random ETH amount to wei (1 ETH = 10^18 wei)
+	randomWeiAmount := int64(randomEthAmount * 1e18)
+
+	// Convert the amount to a string for the bidder
+	amount := fmt.Sprintf("%d", randomWeiAmount)
+
+	// Get current time in milliseconds
 	currentTime := time.Now().UnixMilli()
-	amount := "250000000000000" // amount is in wei. Equivalent to .00025 ETH bids
+
+	// Define bid decay start and end
 	decayStart := currentTime
 	decayEnd := currentTime + (time.Duration(24 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
 
+	// Send the bid
 	_, err := bidderClient.SendBid([]string{strings.TrimPrefix(txHash, "0x")}, amount, blockNumber, decayStart, decayEnd)
 	if err != nil {
 		log.Warn("failed to send bid", "err", err)
 	} else {
-		log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber)
+		log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber, "amount (ETH)", randomEthAmount)
 	}
 }
 
