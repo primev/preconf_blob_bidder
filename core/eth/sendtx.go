@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/exp/rand"
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	gokzg4844 "github.com/crate-crypto/go-kzg-4844"
@@ -126,13 +127,12 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 // Parameters:
 // - wsClient: The Ethereum WebSocket client instance to get the nonce.
 // - rpcEndpoint: The RPC endpoint URL to send the transaction to.
-// - private: A flag indicating whether to send the transaction to the Titan endpoint only.
 // - authAcct: The authenticated account struct containing the address and private key.
 // - numBlobs: The number of blobs to include in the transaction.
 //
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
-func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
+func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
@@ -196,12 +196,15 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 	incrementFactor := big.NewInt(110) // 10% increase
 	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
 
-	// Adjust gas tip cap and fee cap incrementally
-	priorityFeeIncrement := big.NewInt(20000000000) // 20 gwei increase
+	// Randomize the priority fee increment between 2 gwei and 20 gwei
+	rand.Seed(uint64(time.Now().UnixNano()))
+	priorityFeeIncrement := big.NewInt(int64(rand.Intn(19) + 2))    // Random value between 2 and 20
+	priorityFeeIncrement.Mul(priorityFeeIncrement, big.NewInt(1e9)) // Convert to gwei
+
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
-	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (0.5 gwei)
-	maxPriorityFee := new(big.Int).Mul(priorityFeeIncrement, big.NewInt(50)) // 0.5 gwei
+	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (20 gwei)
+	maxPriorityFee := big.NewInt(20 * 1e9) // 20 gwei
 	if gasTipCapAdjusted.Cmp(maxPriorityFee) > 0 {
 		gasTipCapAdjusted.Set(maxPriorityFee)
 	}
@@ -238,14 +241,6 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	retryAttempts := 5
 	for i := 0; i < retryAttempts; i++ {
-		if private {
-			// Send the transaction only to the Titan endpoint
-			_, err = sendBundle("http://holesky-rpc.titanbuilder.xyz/", signedTx, blockNumber+offset)
-		} else {
-			// Send the transaction to the specified public RPC endpoint
-			_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
-		}
-
 		if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
 			// Increment gas fee cap slightly and try again
 			incrementFactor := big.NewInt(105) // 105% increase
