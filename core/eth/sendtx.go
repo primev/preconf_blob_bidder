@@ -124,7 +124,7 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 // the transaction is sent only to the Titan endpoint. Otherwise, it is sent to the specified public RPC endpoint.
 //
 // Parameters:
-// - client: The Ethereum client instance.
+// - wsClient: The Ethereum WebSocket client instance to get the nonce.
 // - rpcEndpoint: The RPC endpoint URL to send the transaction to.
 // - private: A flag indicating whether to send the transaction to the Titan endpoint only.
 // - authAcct: The authenticated account struct containing the address and private key.
@@ -132,7 +132,7 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 //
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
-func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
+func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, private bool, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
@@ -152,13 +152,7 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 		err1, err2  error
 	)
 
-	// Connect to the Titan Holesky client
-	//	titan_client, err := bb.NewGethClient("http://holesky-rpc.titanbuilder.xyz/")
-	//	if err != nil {
-	//		fmt.Println("Failed to connect to titan client: ", err)
-	//	}
-
-	chainID, err := getChainID(client, context.Background())
+	chainID, err := getChainID(wsClient, context.Background()) // Use WebSocket client to get chain ID
 	if err != nil {
 		return "", 0, err
 	}
@@ -169,12 +163,12 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 
 	go func() {
 		defer wg.Done()
-		nonce, err1 = client.PendingNonceAt(context.Background(), fromAddress)
+		nonce, err1 = wsClient.PendingNonceAt(context.Background(), fromAddress) // Use WebSocket client for nonce
 	}()
 
 	go func() {
 		defer wg.Done()
-		gasTipCap, gasFeeCap, err2 = suggestGasTipAndFeeCap(client, ctx)
+		gasTipCap, gasFeeCap, err2 = suggestGasTipAndFeeCap(wsClient, ctx) // Use WebSocket client for gas tips
 	}()
 
 	wg.Wait()
@@ -203,7 +197,6 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 	blobFeeCap.Mul(blobFeeCap, incrementFactor).Div(blobFeeCap, big.NewInt(100))
 
 	// Adjust gas tip cap and fee cap incrementally
-	//priorityFeeIncrement := big.NewInt(10000000) // 0.01 gwei increase
 	priorityFeeIncrement := big.NewInt(20000000000) // 20 gwei increase
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
@@ -247,11 +240,9 @@ func ExecuteBlobTransaction(client *ethclient.Client, rpcEndpoint string, parent
 	for i := 0; i < retryAttempts; i++ {
 		if private {
 			// Send the transaction only to the Titan endpoint
-			//err = titan_client.SendTransaction(ctx, signedTx)
 			_, err = sendBundle("http://holesky-rpc.titanbuilder.xyz/", signedTx, blockNumber+offset)
 		} else {
 			// Send the transaction to the specified public RPC endpoint
-			//err = client.SendTransaction(ctx, signedTx)
 			_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
 		}
 

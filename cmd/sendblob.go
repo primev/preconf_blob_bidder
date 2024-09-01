@@ -27,8 +27,8 @@ var MAX_RPC_RETRIES = 5                   // Max retries for RPC endpoint
 var RPC_TIMEOUT = 30 * time.Second        // Timeout for RPC calls
 
 func main() {
-	rpcEndpoint := flag.String("rpc-endpoint", "", "The Ethereum client endpoint")
-	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client endpoint")
+	rpcEndpoints := flag.String("rpc-endpoints", "", "Comma-separated list of Ethereum client endpoints")
+	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client WebSocket endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	private := flag.Bool("private", false, "Set to true for private transactions")
 	offset := flag.Uint64("offset", 1, "Number of blocks to delay the transaction")
@@ -38,8 +38,8 @@ func main() {
 	log.SetDefault(log.NewLogger(glogger))
 
 	flag.Parse()
-	if *rpcEndpoint == "" {
-		log.Crit("use the rpc-endpoint flag to provide it.", "err", errors.New("endpoint is required"))
+	if *rpcEndpoints == "" {
+		log.Crit("use the rpc-endpoints flag to provide it.", "err", errors.New("endpoints are required"))
 	}
 
 	if *wsEndpoint == "" {
@@ -64,8 +64,14 @@ func main() {
 
 	log.Info("connected to mev-commit client")
 
-	rpcClient := connectRPCClientWithRetries(*rpcEndpoint, MAX_RPC_RETRIES, RPC_TIMEOUT)
-	log.Info("(rpc) geth client connected")
+	// Split the RPC endpoints and connect to each
+	rpcEndpointsList := strings.Split(*rpcEndpoints, ",")
+	var rpcClients []*ethclient.Client
+	for _, endpoint := range rpcEndpointsList {
+		client := connectRPCClientWithRetries(endpoint, MAX_RPC_RETRIES, RPC_TIMEOUT)
+		rpcClients = append(rpcClients, client)
+		log.Info("(rpc) geth client connected", "endpoint", endpoint)
+	}
 
 	// Initial WebSocket connection
 	wsClient, err := connectWSClient(*wsEndpoint)
@@ -88,7 +94,7 @@ func main() {
 	for {
 		select {
 		case <-timer.C:
-			log.Info("2 hours have passed. Stopping the loop.")
+			log.Info("Stopping the loop.")
 			return
 		case err := <-sub.Err():
 			log.Warn("subscription error", "err", err)
@@ -97,19 +103,22 @@ func main() {
 		case header := <-headers:
 			log.Info("new block generated", "block", header.Number)
 			if len(pendingTxs) == 0 {
-				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
-				if err != nil {
-					log.Warn("failed to execute blob tx", "err", err)
-				} else {
-					preconfCount[txHash] = 1
-					blobCount++
-					log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
-					// Send initial preconfirmation bid
-					sendPreconfBid(bidderClient, txHash, int64(blockNumber))
+				for _, rpcEndpoint := range rpcEndpointsList {
+					// Execute the transaction using wsClient for nonce and gas information
+					txHash, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
+					if err != nil {
+						log.Warn("failed to execute blob tx", "err", err)
+					} else {
+						preconfCount[txHash] = 1
+						blobCount++
+						log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
+						// Send initial preconfirmation bid
+						sendPreconfBid(bidderClient, txHash, int64(blockNumber))
+					}
 				}
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
-				checkPendingTxs(rpcClient, bidderClient, pendingTxs, preconfCount)
+				checkPendingTxs(rpcClients, bidderClient, pendingTxs, preconfCount)
 			}
 		}
 	}
@@ -173,9 +182,9 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	// Seed the random number generator
 	rand.Seed(uint64(time.Now().UnixNano()))
 
-	// Generate a random number between 0.00025 and 0.005 ETH
-	minAmount := 0.00025
-	maxAmount := 0.005
+	// Generate a random number between 0.00001 and 0.05 ETH
+	minAmount := 0.00001
+	maxAmount := 0.05
 	randomEthAmount := minAmount + rand.Float64()*(maxAmount-minAmount)
 
 	// Convert the random ETH amount to wei (1 ETH = 10^18 wei)
@@ -189,7 +198,7 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 
 	// Define bid decay start and end
 	decayStart := currentTime
-	decayEnd := currentTime + (time.Duration(24 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
+	decayEnd := currentTime + (time.Duration(36 * time.Second).Milliseconds()) // bid decay is 24 seconds (2 blocks)
 
 	// Send the bid
 	_, err := bidderClient.SendBid([]string{strings.TrimPrefix(txHash, "0x")}, amount, blockNumber, decayStart, decayEnd)
@@ -200,46 +209,48 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 	}
 }
 
-func checkPendingTxs(client *ethclient.Client, bidderClient *bb.Bidder, pendingTxs map[string]int64, preconfCount map[string]int) {
+func checkPendingTxs(clients []*ethclient.Client, bidderClient *bb.Bidder, pendingTxs map[string]int64, preconfCount map[string]int) {
 	for txHash, initialBlock := range pendingTxs {
-		receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash(txHash))
-		if err != nil {
-			if err == ethereum.NotFound {
-				// Transaction is still pending, resend preconfirmation bid
-				currentBlockNumber, err := client.BlockNumber(context.Background())
-				if err != nil {
-					log.Error("failed to retrieve current block number", "err", err)
-					continue
-				}
-				if currentBlockNumber > uint64(initialBlock) {
-					sendPreconfBid(bidderClient, txHash, int64(currentBlockNumber)+1)
-					preconfCount[txHash]++
-
-					log.Info("Resent preconfirmation bid for tx",
-						"txHash", txHash,
-						"block number", currentBlockNumber,
-						"total preconfirmations", preconfCount[txHash])
-
-					// Check if preconfCount exceeds MAX_PRECONF_ATTEMPTS
-					if preconfCount[txHash] >= MAX_PRECONF_ATTEMPTS {
-						log.Warn("Max preconfirmation attempts reached for tx. Restarting with a new transaction.",
-							"txHash", txHash)
-						delete(pendingTxs, txHash)
-						delete(preconfCount, txHash)
+		for _, client := range clients {
+			receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash(txHash))
+			if err != nil {
+				if err == ethereum.NotFound {
+					// Transaction is still pending, resend preconfirmation bid
+					currentBlockNumber, err := client.BlockNumber(context.Background())
+					if err != nil {
+						log.Error("failed to retrieve current block number", "err", err)
+						continue
 					}
+					if currentBlockNumber > uint64(initialBlock) {
+						sendPreconfBid(bidderClient, txHash, int64(currentBlockNumber)+1)
+						preconfCount[txHash]++
+
+						log.Info("Resent preconfirmation bid for tx",
+							"txHash", txHash,
+							"block number", currentBlockNumber,
+							"total preconfirmations", preconfCount[txHash])
+
+						// Check if preconfCount exceeds MAX_PRECONF_ATTEMPTS
+						if preconfCount[txHash] >= MAX_PRECONF_ATTEMPTS {
+							log.Warn("Max preconfirmation attempts reached for tx. Restarting with a new transaction.",
+								"txHash", txHash)
+							delete(pendingTxs, txHash)
+							delete(preconfCount, txHash)
+						}
+					}
+				} else {
+					log.Error("Error checking transaction receipt", "err", err)
 				}
 			} else {
-				log.Error("Error checking transaction receipt", "err", err)
+				// Transaction is confirmed, remove from pendingTxs
+				delete(pendingTxs, txHash)
+				log.Info("Transaction confirmed",
+					"txHash", txHash,
+					"confirmed block", receipt.BlockNumber.Uint64(),
+					"initially sent block", initialBlock,
+					"total preconfirmations", preconfCount[txHash])
+				delete(preconfCount, txHash)
 			}
-		} else {
-			// Transaction is confirmed, remove from pendingTxs
-			delete(pendingTxs, txHash)
-			log.Info("Transaction confirmed",
-				"txHash", txHash,
-				"confirmed block", receipt.BlockNumber.Uint64(),
-				"initially sent block", initialBlock,
-				"total preconfirmations", preconfCount[txHash])
-			delete(preconfCount, txHash)
 		}
 	}
 }
