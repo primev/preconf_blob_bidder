@@ -95,6 +95,7 @@ func main() {
 				txHash, blockNumber, err := ee.ExecuteBlobTransaction(rpcClient, *rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
 				if err != nil {
 					log.Warn("failed to execute blob tx", "err", err)
+					continue
 				}
 
 				//pendingTxs[txHash] = int64(blockNumber)
