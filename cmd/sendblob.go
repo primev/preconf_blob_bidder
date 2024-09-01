@@ -30,7 +30,6 @@ func main() {
 	rpcEndpoints := flag.String("rpc-endpoints", "", "Comma-separated list of Ethereum client endpoints")
 	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client WebSocket endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
-	private := flag.Bool("private", false, "Set to true for private transactions")
 	offset := flag.Uint64("offset", 1, "Number of blocks to delay the transaction")
 
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
@@ -115,7 +114,7 @@ func main() {
 					}
 
 					// Execute the transaction using wsClient for nonce and gas information
-					txHash, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
+					txHash, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
 					if err != nil {
 						log.Warn("failed to execute blob tx", "err", err)
 						continue // Skip to the next endpoint
