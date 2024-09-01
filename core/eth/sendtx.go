@@ -154,6 +154,7 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	chainID, err := getChainID(wsClient, context.Background()) // Use WebSocket client to get chain ID
 	if err != nil {
+		log.Error("Failed to get chain ID", "client", "wsClient", "error", err)
 		return "", 0, err
 	}
 
@@ -163,12 +164,20 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	go func() {
 		defer wg.Done()
+		log.Info("Fetching nonce using WebSocket client", "client", "wsClient")
 		nonce, err1 = wsClient.PendingNonceAt(context.Background(), fromAddress) // Use WebSocket client for nonce
+		if err1 != nil {
+			log.Error("Failed to fetch nonce", "client", "wsClient", "error", err1)
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
+		log.Info("Suggesting gas tip and fee cap using WebSocket client", "client", "wsClient")
 		gasTipCap, gasFeeCap, err2 = suggestGasTipAndFeeCap(wsClient, ctx) // Use WebSocket client for gas tips
+		if err2 != nil {
+			log.Error("Failed to suggest gas tip and fee cap", "client", "wsClient", "error", err2)
+		}
 	}()
 
 	wg.Wait()
@@ -231,16 +240,24 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 	// Sign the transaction with the authenticated account's private key
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
+		log.Error("Failed to create keyed transactor", "error", err)
 		return "", 0, err
 	}
 
 	signedTx, err := auth.Signer(auth.From, tx)
 	if err != nil {
+		log.Error("Failed to sign transaction", "error", err)
 		return "", 0, err
 	}
 
 	retryAttempts := 5
 	for i := 0; i < retryAttempts; i++ {
+		log.Info("Attempting to send transaction", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
+		_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
+		if err != nil {
+			log.Error("Failed to send transaction", "attempt", i+1, "rpcEndpoint", rpcEndpoint, "error", err)
+		}
+
 		if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
 			// Increment gas fee cap slightly and try again
 			incrementFactor := big.NewInt(105) // 105% increase
@@ -260,14 +277,17 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 			})
 			signedTx, err = auth.Signer(auth.From, tx)
 			if err != nil {
+				log.Error("Failed to sign transaction after adjusting gas fee cap", "error", err)
 				return "", 0, err
 			}
-		} else {
+		} else if err == nil {
+			log.Info("Transaction sent successfully", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
 			break
 		}
 	}
 
 	if err != nil {
+		log.Error("Failed to replace transaction after multiple attempts", "attempts", retryAttempts, "rpcEndpoint", rpcEndpoint, "error", err)
 		return "", 0, fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
 	}
 
