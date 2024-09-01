@@ -69,6 +69,10 @@ func main() {
 	var rpcClients []*ethclient.Client
 	for _, endpoint := range rpcEndpointsList {
 		client := connectRPCClientWithRetries(endpoint, MAX_RPC_RETRIES, RPC_TIMEOUT)
+		if client == nil {
+			log.Error("failed to connect to RPC client, skipping endpoint", "endpoint", endpoint)
+			continue
+		}
 		rpcClients = append(rpcClients, client)
 		log.Info("(rpc) geth client connected", "endpoint", endpoint)
 	}
@@ -104,10 +108,17 @@ func main() {
 			log.Info("new block generated", "block", header.Number)
 			if len(pendingTxs) == 0 {
 				for _, rpcEndpoint := range rpcEndpointsList {
+					// Check if the RPC client is valid
+					if rpcEndpoint == "" {
+						log.Warn("Skipping empty RPC endpoint")
+						continue
+					}
+
 					// Execute the transaction using wsClient for nonce and gas information
 					txHash, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, *private, authAcct, NUM_BLOBS, *offset)
 					if err != nil {
 						log.Warn("failed to execute blob tx", "err", err)
+						continue // Skip to the next endpoint
 					} else {
 						preconfCount[txHash] = 1
 						blobCount++
@@ -142,7 +153,7 @@ func connectRPCClientWithRetries(rpcEndpoint string, maxRetries int, timeout tim
 		time.Sleep(RECONNECT_INTERVAL * time.Duration(math.Pow(2, float64(i)))) // Exponential backoff
 	}
 
-	log.Crit("failed to connect to RPC client after retries", "err", err)
+	log.Error("failed to connect to RPC client after retries", "err", err)
 	return nil
 }
 
@@ -212,6 +223,9 @@ func sendPreconfBid(bidderClient *bb.Bidder, txHash string, blockNumber int64) {
 func checkPendingTxs(clients []*ethclient.Client, bidderClient *bb.Bidder, pendingTxs map[string]int64, preconfCount map[string]int) {
 	for txHash, initialBlock := range pendingTxs {
 		for _, client := range clients {
+			if client == nil {
+				continue // Skip nil clients
+			}
 			receipt, err := client.TransactionReceipt(context.Background(), common.HexToHash(txHash))
 			if err != nil {
 				if err == ethereum.NotFound {
