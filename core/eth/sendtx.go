@@ -132,12 +132,12 @@ func getChainID(client *ethclient.Client, ctx context.Context) (*big.Int, error)
 //
 // Returns:
 // - The transaction hash as a string, or an error if the transaction fails.
-func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, authAcct bb.AuthAcct, numBlobs int, offset uint64) (string, uint64, error) {
+func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, parentHeader *types.Header, authAcct bb.AuthAcct, numBlobs int, offset uint64) (*types.Transaction, uint64, error) {
 	privateKey := authAcct.PrivateKey
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return "", 0, errors.New("failed to cast public key to ECDSA")
+		return nil, 0, errors.New("failed to cast public key to ECDSA")
 	}
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
@@ -155,7 +155,7 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 	chainID, err := getChainID(wsClient, context.Background()) // Use WebSocket client to get chain ID
 	if err != nil {
 		log.Error("Failed to get chain ID", "client", "wsClient", "error", err)
-		return "", 0, err
+		return nil, 0, err
 	}
 
 	// Fetch various transaction parameters in parallel
@@ -182,10 +182,10 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	wg.Wait()
 	if err1 != nil {
-		return "", 0, err1
+		return nil, 0, err1
 	}
 	if err2 != nil {
-		return "", 0, err2
+		return nil, 0, err2
 	}
 
 	log.Info("account nonce tracker", "nonce", nonce)
@@ -241,13 +241,13 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
 		log.Error("Failed to create keyed transactor", "error", err)
-		return "", 0, err
+		return nil, 0, err
 	}
 
 	signedTx, err := auth.Signer(auth.From, tx)
 	if err != nil {
 		log.Error("Failed to sign transaction", "error", err)
-		return "", 0, err
+		return nil, 0, err
 	}
 
 	retryAttempts := 5
@@ -278,7 +278,7 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 			signedTx, err = auth.Signer(auth.From, tx)
 			if err != nil {
 				log.Error("Failed to sign transaction after adjusting gas fee cap", "error", err)
-				return "", 0, err
+				return nil, 0, err
 			}
 		} else if err == nil {
 			log.Info("Transaction sent successfully", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
@@ -288,7 +288,7 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	if err != nil {
 		log.Error("Failed to replace transaction after multiple attempts", "attempts", retryAttempts, "rpcEndpoint", rpcEndpoint, "error", err)
-		return "", 0, fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
+		return nil, 0, fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
 	}
 
 	// Record the transaction parameters and save them asynchronously
@@ -310,7 +310,7 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 
-	return signedTx.Hash().String(), blockNumber + offset, nil
+	return signedTx, blockNumber + offset, nil
 }
 
 // suggestGasTipAndFeeCap suggests a gas tip cap and gas fee cap for a transaction, ensuring that the values
