@@ -201,9 +201,9 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 	// Seed the random number generator
 	rand.Seed(uint64(time.Now().UnixNano()))
 
-	// Generate a random number between 0.00001 and 0.05 ETH
-	minAmount := 0.00001
-	maxAmount := 0.05
+	// Generate a random number between 0.000001 and 0.05 ETH
+	minAmount := 0.0000001
+	maxAmount := 0.0025
 	randomEthAmount := minAmount + rand.Float64()*(maxAmount-minAmount)
 
 	// Convert the random ETH amount to wei (1 ETH = 10^18 wei)
