@@ -9,17 +9,19 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
 )
 
-// SendBid sends a bid to the mev-commit client for a given set of transaction hashes, amount, and block number.
+// SendBid sends a bid to the mev-commit client for a given set of transaction hashes or raw transactions, amount, and block number.
 // The bid will be decayed over a specified time range.
 //
 // Parameters:
-// - txHashes: A slice of transaction hashes to bid on.
+// - input: Can be either a slice of transaction hashes ([]string) or a slice of *types.Transaction.
 // - amount: The bid amount in wei as a string.
 // - blockNumber: The block number for which the bid applies.
 // - decayStart: The start timestamp for bid decay (in milliseconds).
@@ -27,14 +29,52 @@ import (
 //
 // Returns:
 // - A pb.Bidder_SendBidClient to receive bid responses, or an error if the bid fails.
-func (b *Bidder) SendBid(txHashes []string, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
-	// Create a new bid request
+func (b *Bidder) SendBid(input interface{}, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
+	// Prepare variables to hold transaction hashes or raw transactions
+	var txHashes []string
+	var rawTransactions [][]byte
+
+	// Determine the input type and process accordingly
+	switch v := input.(type) {
+	case []string:
+		// If input is a slice of transaction hashes
+		txHashes = make([]string, len(v))
+		for i, hash := range v {
+			txHashes[i] = strings.TrimPrefix(hash, "0x")
+		}
+	case []*types.Transaction:
+		// If input is a slice of *types.Transaction, convert to raw transactions
+		rawTransactions = make([][]byte, len(v))
+		for i, tx := range v {
+			rlpEncodedTx, err := tx.MarshalBinary()
+			if err != nil {
+				log.Error("Failed to marshal transaction to raw format", "error", err)
+				return nil, fmt.Errorf("failed to marshal transaction: %w", err)
+			}
+			rawTransactions[i] = rlpEncodedTx
+		}
+	default:
+		log.Warn("Unsupported input type, must be []string or []*types.Transaction")
+		return nil, fmt.Errorf("unsupported input type: %T", input)
+	}
+
+	// Create a new bid request with the appropriate transaction data
 	bidRequest := &pb.Bid{
-		TxHashes:            txHashes,
 		Amount:              amount,
 		BlockNumber:         blockNumber,
 		DecayStartTimestamp: decayStart,
 		DecayEndTimestamp:   decayEnd,
+	}
+
+	if len(txHashes) > 0 {
+		bidRequest.TxHashes = txHashes
+	} else if len(rawTransactions) > 0 {
+		// Convert rawTransactions to []string
+		rawTxStrings := make([]string, len(rawTransactions))
+		for i, rawTx := range rawTransactions {
+			rawTxStrings[i] = string(rawTx)
+		}
+		bidRequest.RawTransactions = rawTxStrings
 	}
 
 	ctx := context.Background()

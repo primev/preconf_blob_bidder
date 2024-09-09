@@ -31,6 +31,7 @@ func main() {
 	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client WebSocket endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	offset := flag.Uint64("offset", 1, "Number of blocks to delay the transaction")
+	usePayload := flag.Bool("use-payload", false, "Set to true to send transactions using payload instead of transaction hashes")
 
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
@@ -114,16 +115,21 @@ func main() {
 					}
 
 					// Execute the transaction using wsClient for nonce and gas information
-					txHash, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
+					tx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
 					if err != nil {
 						log.Warn("failed to execute blob tx", "err", err)
 						continue // Skip to the next endpoint
 					} else {
-						preconfCount[txHash.Hash().String()] = 1
+						preconfCount[tx.Hash().String()] = 1
 						blobCount++
-						log.Info("blobs sent", "count", blobCount, "tx", txHash, "block", blockNumber)
-						// Send initial preconfirmation bid
-						sendPreconfBid(bidderClient, txHash.Hash().String(), int64(blockNumber))
+						log.Info("blobs sent", "count", blobCount, "tx", tx.Hash().Hex(), "block", blockNumber)
+
+						// Send initial preconfirmation bid using tx payload or hash based on flag
+						if *usePayload {
+							sendPreconfBid(bidderClient, tx, int64(blockNumber)) // Send using types.Transaction
+						} else {
+							sendPreconfBid(bidderClient, tx.Hash().Hex(), int64(blockNumber)) // Send using tx hash
+						}
 					}
 				}
 			} else {
