@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
@@ -51,7 +52,7 @@ func (b *Bidder) SendBid(input interface{}, amount string, blockNumber, decaySta
 				log.Error("Failed to marshal transaction to raw format", "error", err)
 				return nil, fmt.Errorf("failed to marshal transaction: %w", err)
 			}
-			rawTransactions[i] = rlpEncodedTx
+			rawTransactions[i] = []byte(hexutil.Encode((rlpEncodedTx)))
 		}
 	default:
 		log.Warn("Unsupported input type, must be []string or []*types.Transaction")

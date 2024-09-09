@@ -91,7 +91,6 @@ func main() {
 	}
 
 	timer := time.NewTimer(24 * 14 * time.Hour)
-	blobCount := 0
 	pendingTxs := make(map[string]int64)
 	preconfCount := make(map[string]int)
 
@@ -113,24 +112,24 @@ func main() {
 						log.Warn("Skipping empty RPC endpoint")
 						continue
 					}
+					signedTx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
+					if *usePayload {
+						// If use-payload is true, send the transaction payload to mev-commit. Don't send bundle
+						sendPreconfBid(bidderClient, signedTx, int64(blockNumber+*offset))
+					} else {
+						_, err = ee.SendBundle(rpcEndpoint, signedTx, blockNumber+*offset)
+						if err != nil {
+							log.Error("Failed to send transaction", "rpcEndpoint", rpcEndpoint, "error", err)
+						}
+						sendPreconfBid(bidderClient, signedTx.Hash().String(), int64(blockNumber))
+					}
 
-					// Execute the transaction using wsClient for nonce and gas information
-					tx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
+					// handle ExecuteBlob error
 					if err != nil {
 						log.Warn("failed to execute blob tx", "err", err)
 						continue // Skip to the next endpoint
-					} else {
-						preconfCount[tx.Hash().String()] = 1
-						blobCount++
-						log.Info("blobs sent", "count", blobCount, "tx", tx.Hash().Hex(), "block", blockNumber)
-
-						// Send initial preconfirmation bid using tx payload or hash based on flag
-						if *usePayload {
-							sendPreconfBid(bidderClient, tx, int64(blockNumber)) // Send using types.Transaction
-						} else {
-							sendPreconfBid(bidderClient, tx.Hash().Hex(), int64(blockNumber)) // Send using tx hash
-						}
 					}
+
 				}
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
@@ -207,8 +206,8 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 	// Seed the random number generator
 	rand.Seed(uint64(time.Now().UnixNano()))
 
-	// Generate a random number between 0.000001 and 0.05 ETH
-	minAmount := 0.0000001
+	// Generate a random number between 0.000005 and 0.0025 ETH
+	minAmount := 0.000005
 	maxAmount := 0.0025
 	randomEthAmount := minAmount + rand.Float64()*(maxAmount-minAmount)
 
@@ -225,39 +224,31 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 	decayStart := currentTime
 	decayEnd := currentTime + int64(time.Duration(36*time.Second).Milliseconds()) // bid decay is 36 seconds (2 blocks)
 
-	// Determine the txHash from the input
-	var txHash string
+	// Determine how to handle the input
+	var err error
 	switch v := input.(type) {
 	case string:
-		txHash = strings.TrimPrefix(v, "0x")
+		// Input is a string, process it as a transaction hash
+		txHash := strings.TrimPrefix(v, "0x")
+		log.Info("Input is a string, sending bid using transaction hash", "tx")
 		// Send the bid with tx hash string
-		_, err := bidderClient.SendBid([]string{txHash}, amount, blockNumber, decayStart, decayEnd)
-		if err != nil {
-			log.Warn("failed to send bid", "err", err)
-		} else {
-			log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber, "amount (ETH)", randomEthAmount)
-		}
+		_, err = bidderClient.SendBid([]string{txHash}, amount, blockNumber, decayStart, decayEnd)
 
 	case *types.Transaction:
-		txHash = strings.TrimPrefix(v.Hash().Hex(), "0x")
-		// Send the bid with tx payload
-		_, err := bidderClient.SendBid([]string{txHash}, amount, blockNumber, decayStart, decayEnd)
-		if err != nil {
-			log.Warn("failed to send bid", "err", err)
-		} else {
-			log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber, "amount (ETH)", randomEthAmount)
-		}
+		// Input is a transaction object, send the transaction object
+		log.Info("Input is a transaction object, sending bid using the full transaction object", "tx")
+		// Send the bid with the full transaction object
+		_, err = bidderClient.SendBid([]*types.Transaction{v}, amount, blockNumber, decayStart, decayEnd)
+
 	default:
 		log.Warn("unsupported input type, must be string or *types.Transaction")
 		return
 	}
 
-	// Send the bid
-	_, err := bidderClient.SendBid([]string{txHash}, amount, blockNumber, decayStart, decayEnd)
 	if err != nil {
 		log.Warn("failed to send bid", "err", err)
 	} else {
-		log.Info("sent preconfirmation bid", "tx", txHash, "block", blockNumber, "amount (ETH)", randomEthAmount)
+		log.Info("sent preconfirmation bid", "block", blockNumber, "amount (ETH)", randomEthAmount)
 	}
 }
 

@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -207,13 +206,13 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	// Randomize the priority fee increment between 2 gwei and 20 gwei
 	rand.Seed(uint64(time.Now().UnixNano()))
-	priorityFeeIncrement := big.NewInt(int64(rand.Intn(190) + 1))   // Random value between 2 and 200
+	priorityFeeIncrement := big.NewInt(int64(rand.Intn(19) + 1))    // Random value between 2 and 200
 	priorityFeeIncrement.Mul(priorityFeeIncrement, big.NewInt(1e7)) // Convert to 1e7 wei
 
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
-	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (20 gwei)
-	maxPriorityFee := big.NewInt(20 * 1e8) // 2 gwei
+	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (10 gwei)
+	maxPriorityFee := big.NewInt(10 * 1e8) // 2 gwei
 	if gasTipCapAdjusted.Cmp(maxPriorityFee) > 0 {
 		gasTipCapAdjusted.Set(maxPriorityFee)
 	}
@@ -250,65 +249,66 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 		return nil, 0, err
 	}
 
-	retryAttempts := 5
-	for i := 0; i < retryAttempts; i++ {
-		log.Info("Attempting to send transaction", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
-		_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
-		if err != nil {
-			log.Error("Failed to send transaction", "attempt", i+1, "rpcEndpoint", rpcEndpoint, "error", err)
-		}
+	// TODO - Retry attempts should be handled outside of the function.
+	// retryAttempts := 5
+	// for i := 0; i < retryAttempts; i++ {
+	// 	log.Info("Attempting to send transaction", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
+	// 	_, err = sendBundle(rpcEndpoint, signedTx, blockNumber+offset)
+	// 	if err != nil {
+	// 		log.Error("Failed to send transaction", "attempt", i+1, "rpcEndpoint", rpcEndpoint, "error", err)
+	// 	}
 
-		if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
-			// Increment gas fee cap slightly and try again
-			incrementFactor := big.NewInt(105) // 105% increase
-			gasFeeCapAdjusted.Mul(gasFeeCapAdjusted, incrementFactor).Div(gasFeeCapAdjusted, big.NewInt(100))
+	// 	if err != nil && strings.Contains(err.Error(), "replacement transaction underpriced") {
+	// 		// Increment gas fee cap slightly and try again
+	// 		incrementFactor := big.NewInt(105) // 105% increase
+	// 		gasFeeCapAdjusted.Mul(gasFeeCapAdjusted, incrementFactor).Div(gasFeeCapAdjusted, big.NewInt(100))
 
-			// Recreate and sign the transaction with updated gasFeeCap
-			tx = types.NewTx(&types.BlobTx{
-				ChainID:    uint256.MustFromBig(chainID),
-				Nonce:      nonce,
-				GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
-				GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
-				Gas:        gasLimit,
-				To:         fromAddress,
-				BlobFeeCap: uint256.MustFromBig(blobFeeCap),
-				BlobHashes: blobHashes,
-				Sidecar:    sideCar,
-			})
-			signedTx, err = auth.Signer(auth.From, tx)
-			if err != nil {
-				log.Error("Failed to sign transaction after adjusting gas fee cap", "error", err)
-				return nil, 0, err
-			}
-		} else if err == nil {
-			log.Info("Transaction sent successfully", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
-			break
-		}
-	}
+	// 		// Recreate and sign the transaction with updated gasFeeCap
+	// 		tx = types.NewTx(&types.BlobTx{
+	// 			ChainID:    uint256.MustFromBig(chainID),
+	// 			Nonce:      nonce,
+	// 			GasTipCap:  uint256.MustFromBig(gasTipCapAdjusted),
+	// 			GasFeeCap:  uint256.MustFromBig(gasFeeCapAdjusted),
+	// 			Gas:        gasLimit,
+	// 			To:         fromAddress,
+	// 			BlobFeeCap: uint256.MustFromBig(blobFeeCap),
+	// 			BlobHashes: blobHashes,
+	// 			Sidecar:    sideCar,
+	// 		})
+	// 		signedTx, err = auth.Signer(auth.From, tx)
+	// 		if err != nil {
+	// 			log.Error("Failed to sign transaction after adjusting gas fee cap", "error", err)
+	// 			return nil, 0, err
+	// 		}
+	// 	} else if err == nil {
+	// 		log.Info("Transaction sent successfully", "attempt", i+1, "rpcEndpoint", rpcEndpoint)
+	// 		break
+	// 	}
+	// }
 
-	if err != nil {
-		log.Error("Failed to replace transaction after multiple attempts", "attempts", retryAttempts, "rpcEndpoint", rpcEndpoint, "error", err)
-		return nil, 0, fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
-	}
+	// if err != nil {
+	// 	log.Error("Failed to replace transaction after multiple attempts", "attempts", retryAttempts, "rpcEndpoint", rpcEndpoint, "error", err)
+	// 	return nil, 0, fmt.Errorf("failed to replace transaction after %d attempts: %v", retryAttempts, err)
+	// }
 
-	// Record the transaction parameters and save them asynchronously
-	currentTimeMillis := time.Now().UnixNano() / int64(time.Millisecond)
+	// // Record the transaction parameters and save them asynchronously
+	// currentTimeMillis := time.Now().UnixNano() / int64(time.Millisecond)
 
-	transactionParameters := map[string]interface{}{
-		"hash":          signedTx.Hash().String(),
-		"chainID":       signedTx.ChainId(),
-		"nonce":         signedTx.Nonce(),
-		"gasTipCap":     signedTx.GasTipCap(),
-		"gasFeeCap":     signedTx.GasFeeCap(),
-		"gasLimit":      signedTx.Gas(),
-		"to":            signedTx.To(),
-		"blobFeeCap":    signedTx.BlobGasFeeCap(),
-		"blobHashes":    signedTx.BlobHashes(),
-		"timeSubmitted": currentTimeMillis,
-		"numBlobs":      numBlobs,
-	}
+	// transactionParameters := map[string]interface{}{
+	// 	"hash":          signedTx.Hash().String(),
+	// 	"chainID":       signedTx.ChainId(),
+	// 	"nonce":         signedTx.Nonce(),
+	// 	"gasTipCap":     signedTx.GasTipCap(),
+	// 	"gasFeeCap":     signedTx.GasFeeCap(),
+	// 	"gasLimit":      signedTx.Gas(),
+	// 	"to":            signedTx.To(),
+	// 	"blobFeeCap":    signedTx.BlobGasFeeCap(),
+	// 	"blobHashes":    signedTx.BlobHashes(),
+	// 	"timeSubmitted": currentTimeMillis,
+	// 	"numBlobs":      numBlobs,
+	// }
 
-	go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
+	// go saveTransactionParameters("data/blobs.json", transactionParameters) // Asynchronous saving
 
 	return signedTx, blockNumber + offset, nil
 }

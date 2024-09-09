@@ -29,7 +29,7 @@ var httpClient = &http.Client{
 	},
 }
 
-func sendBundle(RPCURL string, signedTx *types.Transaction, blkNum uint64) (string, error) {
+func SendBundle(RPCURL string, signedTx *types.Transaction, blkNum uint64) (string, error) {
 	binary, err := signedTx.MarshalBinary()
 	if err != nil {
 		log.Error("Error marshal transaction", "err", err)
