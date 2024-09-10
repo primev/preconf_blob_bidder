@@ -115,9 +115,9 @@ func main() {
 					signedTx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
 					if *usePayload {
 						// If use-payload is true, send the transaction payload to mev-commit. Don't send bundle
-						sendPreconfBid(bidderClient, signedTx, int64(blockNumber+*offset))
+						sendPreconfBid(bidderClient, signedTx, int64(blockNumber))
 					} else {
-						_, err = ee.SendBundle(rpcEndpoint, signedTx, blockNumber+*offset)
+						_, err = ee.SendBundle(rpcEndpoint, signedTx, blockNumber)
 						if err != nil {
 							log.Error("Failed to send transaction", "rpcEndpoint", rpcEndpoint, "error", err)
 						}
