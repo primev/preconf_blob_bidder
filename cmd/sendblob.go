@@ -20,7 +20,7 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-var NUM_BLOBS = 2
+var NUM_BLOBS = 6
 var MAX_PRECONF_ATTEMPTS = 50
 var RECONNECT_INTERVAL = 30 * time.Second // Interval to wait before attempting to reconnect
 var MAX_RPC_RETRIES = 5                   // Max retries for RPC endpoint
@@ -208,7 +208,7 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 
 	// Generate a random number between 0.000005 and 0.0025 ETH
 	minAmount := 0.000005
-	maxAmount := 0.0025
+	maxAmount := 0.001
 	randomEthAmount := minAmount + rand.Float64()*(maxAmount-minAmount)
 
 	// Convert the random ETH amount to wei (1 ETH = 10^18 wei)
