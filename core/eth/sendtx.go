@@ -212,7 +212,7 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
 
 	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (10 gwei)
-	maxPriorityFee := big.NewInt(10 * 1e8) // 2 gwei
+	maxPriorityFee := big.NewInt(int64(rand.Intn(10 * 1e8)))
 	if gasTipCapAdjusted.Cmp(maxPriorityFee) > 0 {
 		gasTipCapAdjusted.Set(maxPriorityFee)
 	}
