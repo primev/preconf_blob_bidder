@@ -4,6 +4,7 @@ package mevcommit
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	pb "github.com/primev/preconf_blob_bidder/core/bidderpb"
@@ -33,7 +33,7 @@ import (
 func (b *Bidder) SendBid(input interface{}, amount string, blockNumber, decayStart, decayEnd int64) (pb.Bidder_SendBidClient, error) {
 	// Prepare variables to hold transaction hashes or raw transactions
 	var txHashes []string
-	var rawTransactions [][]byte
+	var rawTransactions []string
 
 	// Determine the input type and process accordingly
 	switch v := input.(type) {
@@ -45,14 +45,14 @@ func (b *Bidder) SendBid(input interface{}, amount string, blockNumber, decaySta
 		}
 	case []*types.Transaction:
 		// If input is a slice of *types.Transaction, convert to raw transactions
-		rawTransactions = make([][]byte, len(v))
+		rawTransactions = make([]string, len(v))
 		for i, tx := range v {
 			rlpEncodedTx, err := tx.MarshalBinary()
 			if err != nil {
 				log.Error("Failed to marshal transaction to raw format", "error", err)
 				return nil, fmt.Errorf("failed to marshal transaction: %w", err)
 			}
-			rawTransactions[i] = []byte(hexutil.Encode((rlpEncodedTx)))
+			rawTransactions[i] = hex.EncodeToString(rlpEncodedTx)
 		}
 	default:
 		log.Warn("Unsupported input type, must be []string or []*types.Transaction")
