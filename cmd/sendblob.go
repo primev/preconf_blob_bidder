@@ -20,7 +20,7 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-var NUM_BLOBS = 6
+var NUM_BLOBS = 2
 var MAX_PRECONF_ATTEMPTS = 50
 var RECONNECT_INTERVAL = 30 * time.Second // Interval to wait before attempting to reconnect
 var MAX_RPC_RETRIES = 5                   // Max retries for RPC endpoint
