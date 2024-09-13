@@ -236,13 +236,13 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 	case string:
 		// Input is a string, process it as a transaction hash
 		txHash := strings.TrimPrefix(v, "0x")
-		log.Info("Input is a string, sending bid using transaction hash", "tx")
+		log.Info("sending bid with transaction hash", "tx", input)
 		// Send the bid with tx hash string
 		_, err = bidderClient.SendBid([]string{txHash}, amount, blockNumber, decayStart, decayEnd)
 
 	case *types.Transaction:
 		// Input is a transaction object, send the transaction object
-		log.Info("Input is a transaction object, sending bid using the full transaction object", "tx")
+		log.Info("sending bid with tx payload", "tx", input.(*types.Transaction).Hash().String())
 		// Send the bid with the full transaction object
 		_, err = bidderClient.SendBid([]*types.Transaction{v}, amount, blockNumber, decayStart, decayEnd)
 
