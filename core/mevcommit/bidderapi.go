@@ -80,13 +80,8 @@ func (b *Bidder) SendBid(input interface{}, amount string, blockNumber, decaySta
 
 	ctx := context.Background()
 
-	// Timer before creating context
-	startTimeBeforeContext := time.Now()
-
 	// Send the bid request to the mev-commit client
 	response, err := b.client.SendBid(ctx, bidRequest)
-	endTime := time.Since(startTimeBeforeContext).Milliseconds()
-	fmt.Println("Time taken to send bid:", endTime)
 	if err != nil {
 		log.Error("Failed to send bid", "error", err)
 		return nil, fmt.Errorf("failed to send bid: %w", err)
