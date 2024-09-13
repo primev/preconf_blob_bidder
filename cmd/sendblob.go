@@ -113,6 +113,12 @@ func main() {
 						continue
 					}
 					signedTx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
+					log.Info("Transaction fee values",
+						"GasTipCap", signedTx.GasTipCap(),
+						"GasFeeCap", signedTx.GasFeeCap(),
+						"GasLimit", signedTx.Gas(),
+						"BlobFeeCap", signedTx.BlobGasFeeCap(),
+						"BlobHashes", signedTx.BlobHashes())
 					if *usePayload {
 						// If use-payload is true, send the transaction payload to mev-commit. Don't send bundle
 						sendPreconfBid(bidderClient, signedTx, int64(blockNumber))
