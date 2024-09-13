@@ -206,14 +206,16 @@ func ExecuteBlobTransaction(wsClient *ethclient.Client, rpcEndpoint string, pare
 
 	// Randomize the priority fee increment between 2 gwei and 20 gwei
 	rand.Seed(uint64(time.Now().UnixNano()))
-	priorityFeeIncrement := big.NewInt(int64(rand.Intn(19) + 1))    // Random value between 2 and 200
+	priorityFeeIncrement := big.NewInt(int64(rand.Intn(30) + 50))   // Random value between 2 and 200
 	priorityFeeIncrement.Mul(priorityFeeIncrement, big.NewInt(1e7)) // Convert to 1e7 wei
 
 	gasTipCapAdjusted := new(big.Int).Add(gasTipCap, priorityFeeIncrement)
+	gasTipCapAdjusted.Mul(gasTipCapAdjusted, big.NewInt(int64(numBlobs)))
 
 	// Ensure gasTipCapAdjusted doesn't exceed your max intended value (10 gwei)
-	maxPriorityFee := big.NewInt(int64(rand.Intn(10 * 1e8)))
+	maxPriorityFee := big.NewInt(int64(10 * 1e9))
 	if gasTipCapAdjusted.Cmp(maxPriorityFee) > 0 {
+		log.Info("new set", gasTipCapAdjusted)
 		gasTipCapAdjusted.Set(maxPriorityFee)
 	}
 
