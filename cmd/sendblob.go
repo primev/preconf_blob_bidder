@@ -118,7 +118,7 @@ func main() {
 						"GasFeeCap", signedTx.GasFeeCap(),
 						"GasLimit", signedTx.Gas(),
 						"BlobFeeCap", signedTx.BlobGasFeeCap(),
-						"BlobHashes", signedTx.BlobHashes())
+					)
 					if *usePayload {
 						// If use-payload is true, send the transaction payload to mev-commit. Don't send bundle
 						sendPreconfBid(bidderClient, signedTx, int64(blockNumber))
