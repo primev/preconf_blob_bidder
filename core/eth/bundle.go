@@ -33,6 +33,7 @@ func SendBundle(RPCURL string, signedTx *types.Transaction, blkNum uint64) (stri
 	binary, err := signedTx.MarshalBinary()
 	if err != nil {
 		log.Error("Error marshal transaction", "err", err)
+		return "", err
 	}
 
 	blockNum := hexutil.EncodeUint64(blkNum)
@@ -65,12 +66,14 @@ func SendBundle(RPCURL string, signedTx *types.Transaction, blkNum uint64) (stri
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Error("an error occurred", "err", err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Error("an error occurred", "err", err)
+		return "", err
 	}
 
 	return string(body), nil
