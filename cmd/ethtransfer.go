@@ -9,7 +9,7 @@ import (
 	bb "github.com/primev/preconf_blob_bidder/core/mevcommit"
 )
 
-func sendTransfer() {
+func sendEthTransfer() {
 	endpoint := flag.String("endpoint", "", "The Ethereum client endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	flag.Parse()
@@ -24,13 +24,13 @@ func sendTransfer() {
 	}
 
 	// Authenticate address
-	authAcct, err := bb.AuthenticateAddress(*privateKeyHex, client)
+	authAcct, err := bb.AuthenticateAddress(*privateKeyHex)
 	if err != nil {
 		log.Fatalf("Failed to authenticate private key: %v", err)
 	}
 
 	// Send ETH Transfer
-	txHash, err := ee.SelfETHTransfer(client, *authAcct, big.NewInt(100000), 3000000, []byte{0x4c, 0xdc, 0xeb, 0x20})
+	txHash, err := ee.SelfETHTransfer(client, authAcct, big.NewInt(100000), 3000000, []byte{0x4c, 0xdc, 0xeb, 0x20})
 	if err != nil {
 		log.Fatalf("Failed to send transaction: %v", err)
 	}
