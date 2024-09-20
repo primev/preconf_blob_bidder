@@ -20,7 +20,7 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-var NUM_BLOBS = 6
+var NUM_BLOBS = 1
 var MAX_PRECONF_ATTEMPTS = 50
 var RECONNECT_INTERVAL = 30 * time.Second // Interval to wait before attempting to reconnect
 var MAX_RPC_RETRIES = 5                   // Max retries for RPC endpoint
@@ -31,7 +31,7 @@ func main() {
 	wsEndpoint := flag.String("ws-endpoint", "", "The Ethereum client WebSocket endpoint")
 	privateKeyHex := flag.String("privatekey", "", "The private key in hex format")
 	offset := flag.Uint64("offset", 1, "Number of blocks to delay the transaction")
-	usePayload := flag.Bool("use-payload", false, "Set to true to send transactions using payload instead of transaction hashes")
+	// usePayload := flag.Bool("use-payload", false, "Set to true to send transactions using payload instead of transaction hashes")
 
 	glogger := log.NewGlogHandler(log.NewTerminalHandler(os.Stderr, true))
 	glogger.Verbosity(log.LevelInfo)
@@ -94,6 +94,7 @@ func main() {
 	pendingTxs := make(map[string]int64)
 	preconfCount := make(map[string]int)
 
+	// send blob publicly
 	for {
 		select {
 		case <-timer.C:
@@ -105,6 +106,23 @@ func main() {
 			continue
 		case header := <-headers:
 			log.Info("new block generated", "block", header.Number)
+
+			// Check if there are pending transactions
+			if len(pendingTxs) > 0 {
+				// Check if the pending transaction is confirmed before proceeding
+				for txHash, _ := range pendingTxs {
+					receipt, err := wsClient.TransactionReceipt(context.Background(), common.HexToHash(txHash))
+					if err != nil {
+						log.Warn("failed to fetch transaction receipt", "txHash", txHash, "err", err)
+						continue
+					}
+					if receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
+						log.Info("Transaction confirmed", "txHash", txHash)
+						delete(pendingTxs, txHash) // Remove the confirmed transaction
+					}
+				}
+			}
+
 			if len(pendingTxs) == 0 {
 				for _, rpcEndpoint := range rpcEndpointsList {
 					// Check if the RPC client is valid
@@ -112,30 +130,34 @@ func main() {
 						log.Warn("Skipping empty RPC endpoint")
 						continue
 					}
-					signedTx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
-					log.Info("Transaction fee values",
-						"GasTipCap", signedTx.GasTipCap(),
-						"GasFeeCap", signedTx.GasFeeCap(),
-						"GasLimit", signedTx.Gas(),
-						"BlobFeeCap", signedTx.BlobGasFeeCap(),
-					)
-					if *usePayload {
-						// If use-payload is true, send the transaction payload to mev-commit. Don't send bundle
-						sendPreconfBid(bidderClient, signedTx, int64(blockNumber))
-					} else {
-						_, err = ee.SendBundle(rpcEndpoint, signedTx, blockNumber)
-						if err != nil {
-							log.Error("Failed to send transaction", "rpcEndpoint", rpcEndpoint, "error", err)
-						}
-						sendPreconfBid(bidderClient, signedTx.Hash().String(), int64(blockNumber))
-					}
 
-					// handle ExecuteBlob error
+					// Execute the blob transaction
+					signedTx, blockNumber, err := ee.ExecuteBlobTransaction(wsClient, rpcEndpoint, header, authAcct, NUM_BLOBS, *offset)
 					if err != nil {
 						log.Warn("failed to execute blob tx", "err", err)
 						continue // Skip to the next endpoint
 					}
 
+					log.Info("Transaction fee values",
+						"GasTipCap", signedTx.GasTipCap(),
+						"GasFeeCap", signedTx.GasFeeCap(),
+						"GasLimit", signedTx.Gas(),
+						"BlobFeeCap", signedTx.BlobGasFeeCap(),
+						"blockNumber", blockNumber,
+					)
+
+					// Send the signed transaction to the Geth WebSocket mempool
+					err = wsClient.SendTransaction(context.Background(), signedTx)
+					if err != nil {
+						log.Error("failed to send transaction to mempool", "err", err)
+						continue // Continue with the next iteration in case of error
+					}
+
+					txHash := signedTx.Hash().Hex()
+					log.Info("Successfully sent transaction to mempool", "txHash", txHash)
+
+					// Add the transaction to the pending list
+					pendingTxs[txHash] = time.Now().Unix()
 				}
 			} else {
 				// Check pending transactions and resend preconfirmation bids if necessary
