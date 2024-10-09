@@ -51,8 +51,13 @@ func main() {
 		log.Crit("Failed to authenticate private key:", "err", err)
 	}
 
+	bidderAddress := os.Getenv("BIDDER_ADDRESS")
+	if bidderAddress == "" {
+		bidderAddress = "127.0.0.1:13524"
+	}
+
 	cfg := bb.BidderConfig{
-		ServerAddress: "127.0.0.1:13524",
+		ServerAddress: bidderAddress,
 		LogFmt:        "json",
 		LogLevel:      "info",
 	}
