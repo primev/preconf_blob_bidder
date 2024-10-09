@@ -1,0 +1,22 @@
+services:
+  bidder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bidder  
+    environment:
+      BIDDER_ADDRESS: 10.0.0.1:13524
+    env_file:
+      - .env
+    entrypoint: ./entrypoint.sh  
+    profiles:
+      - bidder
+    networks:
+      primev_net: 
+        ipv4_address: 10.0.0.2
+
+networks:
+  primev_net:
+    ipam:
+      config:
+        - subnet: 10.0.0.0/16
