@@ -1,0 +1,18 @@
+version: '3'
+services:
+  preconf-blob-bidder:
+    build: .
+    container_name: preconf-blob-bidder
+    networks:
+      - app-network
+    environment:
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - RPC_ENDPOINTS=${RPC_ENDPOINTS}
+      - WS_ENDPOINT=${WS_ENDPOINT}
+      - USE_PAYLOAD=${USE_PAYLOAD}
+      - BIDDER_ADDRESS=mev-commit-bidder:13523
+    command: >
+      ./sendblob
+networks:
+  app-network:
+    external: true

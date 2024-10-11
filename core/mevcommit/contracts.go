@@ -20,9 +20,9 @@ import (
 
 // Contract addresses used within the mev-commit protocol.
 const (
-	bidderRegistryAddress         = "0x7ffa86fF89489Bca72Fec2a978e33f9870B2Bd25"
-	blockTrackerAddress           = "0x2eEbF31f5c932D51556E70235FB98bB2237d065c"
-	preConfCommitmentStoreAddress = "0xCAC68D97a56b19204Dd3dbDC103CB24D47A825A3"
+	bidderRegistryAddress         = "0x401B3287364f95694c43ACA3252831cAc02e5C41"
+	blockTrackerAddress           = "0x7538F3AaA07dA1990486De21A0B438F55e9639e4"
+	PreconfManagerAddress 		  = "0x9433bCD9e89F923ce587f7FA7E39e120E93eb84D"
 )
 
 // CommitmentStoredEvent represents the data structure for the CommitmentStored event.
@@ -287,7 +287,7 @@ func ListenForCommitmentStoredEvent(client *ethclient.Client) {
 			log.Fatalf("Error with header subscription: %v", err)
 		case header := <-headers:
 			query := ethereum.FilterQuery{
-				Addresses: []common.Address{common.HexToAddress(preConfCommitmentStoreAddress)},
+				Addresses: []common.Address{common.HexToAddress(PreconfManagerAddress)},
 				FromBlock: header.Number,
 				ToBlock:   header.Number,
 			}

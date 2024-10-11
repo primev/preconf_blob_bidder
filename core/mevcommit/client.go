@@ -20,6 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+const HOLESKY_CHAIN_ID = 1700
+
 // BidderConfig holds the configuration settings for the mev-commit bidder node.
 type BidderConfig struct {
 	ServerAddress string `json:"server_address" yaml:"server_address"` // The address of the gRPC server for the bidder node.
@@ -54,7 +56,7 @@ type AuthAcct struct {
 // - A pointer to a Bidder struct, or an error if the connection fails.
 func NewBidderClient(cfg BidderConfig) (*Bidder, error) {
 	// Establish a gRPC connection to the bidder service
-	conn, err := grpc.Dial(cfg.ServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(cfg.ServerAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Crit("Failed to connect to gRPC server", "err", err)
 		return nil, err
@@ -115,7 +117,7 @@ func AuthenticateAddress(privateKeyHex string) (AuthAcct, error) {
 	address := crypto.PubkeyToAddress(*publicKeyECDSA)
 
 	// Set the chain ID (currently hardcoded for Holesky testnet)
-	chainID := big.NewInt(17000) // Holesky
+	chainID := big.NewInt(HOLESKY_CHAIN_ID) // Holesky
 
 	// Create the transaction options with the private key and chain ID
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
