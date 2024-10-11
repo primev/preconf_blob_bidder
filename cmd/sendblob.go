@@ -36,7 +36,7 @@ func main() {
 	// Read configuration from environment variables
 	bidderAddress := os.Getenv("BIDDER_ADDRESS")
 	if bidderAddress == "" {
-		bidderAddress = "mev-commit-bidder:13523"
+		bidderAddress = "mev-commit-bidder:13524"
 	}
 
 	// NOTE 10/10/24 the rpc endpoint is not being used anymore. 
@@ -172,6 +172,9 @@ func main() {
 		}
 	}
 }
+
+
+
 
 // Function to connect to RPC client with retry logic and timeout
 func connectRPCClientWithRetries(rpcEndpoint string, maxRetries int, timeout time.Duration) *ethclient.Client {
