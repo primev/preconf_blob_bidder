@@ -64,11 +64,11 @@ func SelfETHTransfer(client *ethclient.Client, authAcct bb.AuthAcct, value *big.
 	
 	blockNumber := header.Number.Uint64()
 
-	// Set the max priority fee per gas to be 10 times the base fee
-	maxPriorityFee := new(big.Int).Mul(baseFee, big.NewInt(10))
+	// Set the max priority fee per gas to be 2 times the base fee
+	maxPriorityFee := new(big.Int).Mul(baseFee, big.NewInt(2))
 
-	// Set the max fee per gas to be 10 times the max priority fee
-	maxFeePerGas := new(big.Int).Mul(maxPriorityFee, big.NewInt(10))
+	// Set the max fee per gas to be 2 times the max priority fee
+	maxFeePerGas := new(big.Int).Mul(maxPriorityFee, big.NewInt(2))
 
 	// Get the chain ID (this does not work with the Titan RPC)
 	chainID, err := client.NetworkID(context.Background())

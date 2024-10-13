@@ -1,18 +1,16 @@
 version: '3'
 services:
-  preconf-blob-bidder:
+  preconf_bot:
     build: .
-    container_name: preconf-blob-bidder
     networks:
       - app-network
     environment:
       - PRIVATE_KEY=${PRIVATE_KEY}
-      - RPC_ENDPOINTS=${RPC_ENDPOINTS}
+      - RPC_ENDPOINT=${RPC_ENDPOINT}
       - WS_ENDPOINT=${WS_ENDPOINT}
       - USE_PAYLOAD=${USE_PAYLOAD}
-      - BIDDER_ADDRESS=mev-commit-bidder:13523
-    command: >
-      ./sendblob
+      - BIDDER_ADDRESS=${BIDDER_ADDRESS}
+      - SERVICE_ADDRESS=mev-commit-bidder:13524  # Add this line
 networks:
   app-network:
     external: true

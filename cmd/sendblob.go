@@ -20,7 +20,6 @@ import (
 	"golang.org/x/exp/rand"
 )
 
-
 func main() {
 	// Load the .env file
 	err := godotenv.Load()
@@ -39,10 +38,24 @@ func main() {
 		bidderAddress = "mev-commit-bidder:13524"
 	}
 
-	// NOTE 10/10/24 the rpc endpoint is not being used anymore. 
-	rpcEndpoint := os.Getenv("RPC_ENDPOINT")
-	if rpcEndpoint == "" {
-		log.Crit("RPC_ENDPOINT environment variable is required")
+	usePayloadEnv := os.Getenv("USE_PAYLOAD")
+	usePayload := true // Default value
+	if usePayloadEnv != "" {
+		// Convert usePayloadEnv to bool
+		var err error
+		usePayload, err = parseBoolEnvVar("USE_PAYLOAD", usePayloadEnv)
+		if err != nil {
+			log.Crit("Invalid USE_PAYLOAD value", "err", err)
+		}
+	}
+
+	// Now, load rpcEndpoint conditionally
+	var rpcEndpoint string
+	if !usePayload {
+		rpcEndpoint = os.Getenv("RPC_ENDPOINT")
+		if rpcEndpoint == "" {
+			log.Crit("RPC_ENDPOINT environment variable is required when USE_PAYLOAD is false")
+		}
 	}
 
 	wsEndpoint := os.Getenv("WS_ENDPOINT")
@@ -66,17 +79,6 @@ func main() {
 		}
 	}
 
-	usePayloadEnv := os.Getenv("USE_PAYLOAD")
-	usePayload := false // Default value
-	if usePayloadEnv != "" {
-		// Convert usePayloadEnv to bool
-		var err error
-		usePayload, err = parseBoolEnvVar("USE_PAYLOAD", usePayloadEnv)
-		if err != nil {
-			log.Crit("Invalid USE_PAYLOAD value", "err", err)
-		}
-	}
-
 	// Log configuration values (excluding sensitive data)
 	log.Info("Configuration values",
 		"bidderAddress", bidderAddress,
@@ -85,7 +87,6 @@ func main() {
 		"offset", offset,
 		"usePayload", usePayload,
 	)
-
 
 	authAcct, err := bb.AuthenticateAddress(privateKeyHex)
 	if err != nil {
@@ -106,13 +107,16 @@ func main() {
 	log.Info("connected to mev-commit client")
 
 	timeout := 30 * time.Second
-	
-	// Connect to RPC client
-	client := connectRPCClientWithRetries(rpcEndpoint, 5, timeout)
-	if client == nil {
-		log.Error("failed to connect to RPC client", rpcEndpoint)
+
+	// Only connect to the RPC client if usePayload is false
+	if !usePayload {
+		// Connect to RPC client
+		client := connectRPCClientWithRetries(rpcEndpoint, 5, timeout)
+		if client == nil {
+			log.Error("failed to connect to RPC client", rpcEndpoint)
+		}
+		log.Info("(rpc) geth client connected", "endpoint", rpcEndpoint)
 	}
-	log.Info("(rpc) geth client connected", "endpoint", rpcEndpoint)
 
 	// Connect to WS client
 	wsClient, err := connectWSClient(wsEndpoint)
@@ -156,7 +160,7 @@ func main() {
 				// If use-payload is true, send the transaction payload to mev-commit. Don't send bundle
 				sendPreconfBid(bidderClient, signedTx, int64(blockNumber))
 			} else {
-			// send as a flashbots bundle and send the preconf bid with the transaction hash
+				// send as a flashbots bundle and send the preconf bid with the transaction hash
 				_, err = ee.SendBundle(rpcEndpoint, signedTx, blockNumber)
 				if err != nil {
 					log.Error("Failed to send transaction", "rpcEndpoint", rpcEndpoint, "error", err)
@@ -173,10 +177,6 @@ func main() {
 	}
 }
 
-
-
-
-// Function to connect to RPC client with retry logic and timeout
 func connectRPCClientWithRetries(rpcEndpoint string, maxRetries int, timeout time.Duration) *ethclient.Client {
 	var rpcClient *ethclient.Client
 	var err error
@@ -209,7 +209,6 @@ func connectWSClient(wsEndpoint string) (*ethclient.Client, error) {
 	return wsClient, nil
 }
 
-// Reconnect function for WebSocket client
 func reconnectWSClient(wsEndpoint string, headers chan *types.Header) (*ethclient.Client, ethereum.Subscription) {
 	var wsClient *ethclient.Client
 	var sub ethereum.Subscription
@@ -231,28 +230,18 @@ func reconnectWSClient(wsEndpoint string, headers chan *types.Header) (*ethclien
 	return nil, nil
 }
 
-// sendPreconfBid sends a preconfirmation bid to the bidder client for a specified transaction.
-//
-// Parameters:
-//   - bidderClient (*bb.Bidder): The bidder client used to send the bid.
-//   - input (interface{}): The input can either be a transaction hash (string) or a pointer to a types.Transaction object.
-//   - blockNumber (int64): The block number at which the bid is valid.
-//
-// The function generates a random bid amount between 0.00001 and 0.05 ETH, converts it to wei, and sends the bid with a decay time window.
-// If the input type is not supported, the function logs a warning and exits.
 func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int64) {
 	// Seed the random number generator
 	rand.Seed(uint64(time.Now().UnixNano()))
 
-	// Generate a random number between 0.000005 and 0.0025 ETH
-	minAmount := 0.00005
-	maxAmount := 0.009
+	// Generate a random number between 0.005 and 0.05 ETH
+	minAmount := 0.005
+	maxAmount := 0.05
 	randomEthAmount := minAmount + rand.Float64()*(maxAmount-minAmount)
 
 	// Convert the random ETH amount to wei (1 ETH = 10^18 wei)
 	randomWeiAmount := int64(randomEthAmount * 1e18)
 
-	
 	// Convert the amount to a string for the bidder
 	amount := fmt.Sprintf("%d", randomWeiAmount)
 
@@ -263,7 +252,6 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 	decayStart := currentTime
 	decayEnd := currentTime + int64(time.Duration(36*time.Second).Milliseconds()) // bid decay is 36 seconds (2 blocks)
 
-	
 	// Determine how to handle the input
 	var err error
 	switch v := input.(type) {
@@ -292,8 +280,6 @@ func sendPreconfBid(bidderClient *bb.Bidder, input interface{}, blockNumber int6
 	}
 }
 
-
-// Helper function to parse bool environment variables
 func parseBoolEnvVar(name, value string) (bool, error) {
 	parsedValue, err := strconv.ParseBool(value)
 	if err != nil {
@@ -302,12 +288,10 @@ func parseBoolEnvVar(name, value string) (bool, error) {
 	return parsedValue, nil
 }
 
-// parseUintEnvVar parses a string environment variable into a uint64.
-// It returns the parsed value or an error if the parsing fails.
 func parseUintEnvVar(name, value string) (uint64, error) {
-    parsedValue, err := strconv.ParseUint(value, 10, 64)
-    if err != nil {
-        return 0, fmt.Errorf("environment variable %s must be a positive integer, got '%s'", name, value)
-    }
-    return parsedValue, nil
+	parsedValue, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("environment variable %s must be a positive integer, got '%s'", name, value)
+	}
+	return parsedValue, nil
 }

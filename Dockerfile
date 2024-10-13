@@ -1,5 +1,4 @@
-# Use the official Go image as the builder stage
-FROM golang:1.23 as builder
+FROM golang:1.21
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -8,23 +7,11 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the entire project and build the Go application
+# Copy the entire project into the container
 COPY . .
-RUN go build -o sendblob ./cmd/sendblob.go
 
-# Use a minimal base image for the final stage
-FROM debian:bookworm
+# Build the Go application from the 'eth_transfer' directory
+RUN go build -o sendblob ./cmd
 
-# Install CA certificates and any other necessary dependencies
-RUN apt-get update && \
-    apt-get install -y ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-    
-# Set the working directory inside the container
-WORKDIR /app
-
-# Copy the binary from the builder stage
-COPY --from=builder /app/sendblob .
-
-# Command to run when starting the container
+# Command to run your application
 CMD ["./sendblob"]
